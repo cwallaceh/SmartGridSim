@@ -82,10 +82,11 @@ species generic {
 }
 		
 species house parent: generic {
-    int house_size <- 2;
+    int house_size <- 4;
     int my_index <- house index_of self;
     int num_appliances <- rnd(5) + 2;
     list<appliance> my_appliances <- [];
+    file my_icon <- file("../images/House.gif") ;
     
     float my_x <- get_coordinate_x(radius_house, my_index, degree_house);
     float my_y <- get_coordinate_y(radius_house, my_index, degree_house);
@@ -95,6 +96,10 @@ species house parent: generic {
     aspect base {
 		draw sphere(house_size) color: rgb('blue') at: {my_x , my_y, 0 } ;
 	}
+	
+	aspect icon {
+        draw my_icon size: house_size at: {my_x , my_y, 0 } ;
+    }
 	
 	action get_my_appliances{
 		loop i from: 1 to: num_appliances{
@@ -125,9 +130,10 @@ species house parent: generic {
 }
 
 species transformer parent: generic  {
-    int transformer_size <- 3;
+    int transformer_size <- 6;
     int my_index <- transformer index_of self;
     list<house> my_houses <- [];
+    file my_icon <- file("../images/Transformer.gif") ;
     
     float my_x <- get_coordinate_x(radius_transformer, my_index, degree_transformer);
     float my_y <- get_coordinate_y(radius_transformer, my_index, degree_transformer);
@@ -137,6 +143,10 @@ species transformer parent: generic  {
     aspect base {
 		draw sphere(transformer_size) color: rgb('green') at: {my_x , my_y, 0 } ;
 	}
+	
+	aspect icon {
+        draw my_icon size: transformer_size at: {my_x , my_y, 0 } ;
+    }
 	
 	action get_my_houses{
 		loop hs over: (species(house)) {
@@ -149,9 +159,10 @@ species transformer parent: generic  {
 }
 
 species powerline parent: generic {
-    int lines_size <- 4;
+    int lines_size <- 10;
     int my_index <- powerline index_of self;
 	list<transformer> my_transformers <- [];
+    file my_icon <- file("../images/PowerLines.gif") ;
     
     float my_x <- get_coordinate_x(radius_lines, my_index, degree_lines);
     float my_y <- get_coordinate_y(radius_lines, my_index, degree_lines);
@@ -161,6 +172,10 @@ species powerline parent: generic {
     aspect base {
 		draw sphere(lines_size) color: rgb('yellow') at: {my_x , my_y, 0 } ;
 	}
+	
+	aspect icon {
+        draw my_icon size: lines_size at: {my_x , my_y, 0 } ;
+    }
 	
 	action get_my_transformers{
 		loop tr over: (species(transformer)) {
@@ -173,14 +188,19 @@ species powerline parent: generic {
 }
 
 species generator {
-	int generator_size <- 5;
+	int generator_size <- 10;
 	list<powerline> my_lines update:(list (species(powerline)));
 	float my_x <- (grid_width/4);
     float my_y <- (grid_height/4);
+    file my_icon <- file("../images/PowerPlant.gif") ;
        
 	aspect base {
 			draw sphere(generator_size) color: rgb('red') at: {my_x , my_y , 0 } ;			
 	}
+	
+	aspect icon {
+        draw my_icon size: generator_size at: {my_x , my_y, 0 } ;
+    }
 
 }
 
@@ -200,12 +220,12 @@ experiment test type: gui {
     output {
             display main_display type: opengl {
             		grid land;
-                    species house aspect: base{
+                    species house aspect: icon{
 						species appliance aspect: appliance_base;
 					}
-                    species transformer aspect: base;
-                    species powerline aspect: base;
-                    species generator aspect: base;
+                    species transformer aspect: icon;
+                    species powerline aspect: icon;
+                    species generator aspect: icon;
                     species edge_agent aspect: base;
             }
     }
