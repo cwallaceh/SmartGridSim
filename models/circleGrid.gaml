@@ -27,7 +27,7 @@ global {
     int radius_house <- 55;
     int radius_transformer <- 30;
     int radius_lines <- 15;
-    int radius_appliance <- 3;
+    int radius_appliance <- 4;
     
     init {
             create house number: num_houses ;
@@ -113,10 +113,11 @@ species house parent: generic {
 	}
 	
 	species appliance {
-		int appliance_size <- 1;
+		int appliance_size <- 2;
 		int my_appliance_index <- appliance index_of self;
 		float my_appliance_x <- house(host).my_x + (radius_appliance *(cos(my_appliance_index*degree_appliance))); 
 		float my_appliance_y <- house(host).my_y + (radius_appliance *(sin(my_appliance_index*degree_appliance)));
+		file my_icon <- file("../images/Appliance.gif") ;
 		
 		int policy <- rnd(3) + 1;
 		//int type <- rnd_choice(["Refrigerator", "Washermachine", "Dishwasher"]); 
@@ -124,7 +125,10 @@ species house parent: generic {
 		
 		aspect appliance_base {
 			draw sphere(appliance_size) color: rgb('purple') at:{my_appliance_x, my_appliance_y, 0};
-		}	
+		}
+		aspect appliance_icon {
+        draw my_icon size: appliance_size at:{my_appliance_x, my_appliance_y, 0};
+    	}
 	}
 	
 }
@@ -221,7 +225,7 @@ experiment test type: gui {
             display main_display type: opengl {
             		grid land;
                     species house aspect: icon{
-						species appliance aspect: appliance_base;
+						species appliance aspect: appliance_icon;
 					}
                     species transformer aspect: icon;
                     species powerline aspect: icon;
