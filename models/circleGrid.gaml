@@ -12,6 +12,9 @@ model circleGrid
 global {
 	graph general_graph;
 	
+	float max_energy_produced <- 100.0;
+	float appliance_energy_consumption <- 0.005;
+	
 	int grid_width <- 200;
 	int grid_height <- 200;
 
@@ -71,6 +74,8 @@ global {
 	 }  
 }
 
+/////////////////////////////////////////////////////////////GENERIC
+
 species generic { 
 	float get_coordinate_x (int radius, int index, float degree){
 		return ((radius *(cos(index*degree))) + (grid_width/4));
@@ -79,8 +84,13 @@ species generic {
 	float get_coordinate_y (int radius, int index, float degree){
 		return ((radius *(sin(index*degree))) + (grid_height/4));
 	}
+	
+	float gen_energy <- max_energy_produced;
+	
 }
-		
+
+/////////////////////////////////////////////////////////////HOUSE
+
 species house parent: generic {
     int house_size <- 4;
     int my_index <- house index_of self;
@@ -112,7 +122,9 @@ species house parent: generic {
 		do get_my_appliances;
 	}
 	
-	species appliance {
+/////////////////////////////////////////////////////////////APPLIANCES
+	
+	species appliance parent: generic {
 		int appliance_size <- 2;
 		int my_appliance_index <- appliance index_of self;
 		float my_appliance_x <- house(host).my_x + (radius_appliance *(cos(my_appliance_index*degree_appliance))); 
@@ -123,15 +135,30 @@ species house parent: generic {
 		//int type <- rnd_choice(["Refrigerator", "Washermachine", "Dishwasher"]); 
 		int demand_pattern <- 1; //todo: list per slot of time the amount of power it will consume
 		
+		float energy_consumed <- appliance_energy_consumption;
+		float energy <- rnd(100);
+		
+		reflex consume when: energy > 0 {
+	      	energy <- energy - energy_consumed;
+	      	max_energy_produced <- max_energy_produced - energy_consumed;
+	   	}
+		
+		reflex die when: energy <= 0 {
+	      	do die ;
+	   	}
+		
 		aspect appliance_base {
 			draw sphere(appliance_size) color: rgb('purple') at:{my_appliance_x, my_appliance_y, 0};
 		}
+		
 		aspect appliance_icon {
-        draw my_icon size: appliance_size at:{my_appliance_x, my_appliance_y, 0};
+        draw my_icon size: appliance_size color: rgb('yellow') at:{my_appliance_x, my_appliance_y, 0};
     	}
 	}
 	
 }
+
+/////////////////////////////////////////////////////////////TRANSFORMER
 
 species transformer parent: generic  {
     int transformer_size <- 6;
@@ -162,6 +189,8 @@ species transformer parent: generic  {
     }
 }
 
+/////////////////////////////////////////////////////////////POWER LINES
+
 species powerline parent: generic {
     int lines_size <- 10;
     int my_index <- powerline index_of self;
@@ -191,7 +220,9 @@ species powerline parent: generic {
     }
 }
 
-species generator {
+/////////////////////////////////////////////////////////////GENERATOR
+
+species generator parent: generic {
 	int generator_size <- 10;
 	list<powerline> my_lines update:(list (species(powerline)));
 	float my_x <- (grid_width/4);
@@ -199,14 +230,20 @@ species generator {
     file my_icon <- file("../images/PowerPlant.gif") ;
        
 	aspect base {
-			draw sphere(generator_size) color: rgb('red') at: {my_x , my_y , 0 } ;			
+		draw sphere(generator_size) color: rgb('red') at: {my_x , my_y , 0 } ;			
 	}
 	
 	aspect icon {
         draw my_icon size: generator_size at: {my_x , my_y, 0 } ;
     }
+    
+   	reflex die when: max_energy_produced <= 0 {
+	      	do die ;
+	}
 
 }
+
+/////////////////////////////////////////////////////////////GRAPH
 
 species edge_agent {
     aspect base {
@@ -214,9 +251,13 @@ species edge_agent {
     }
 }
 
+/////////////////////////////////////////////////////////////LAND
+
 grid land width: grid_width height: grid_height neighbours: 4 {
 	rgb color <- rgb('white'); 
 }
+
+/////////////////////////////////////////////////////////////EXPERIMENT
 
 experiment test type: gui {
     parameter "Number of houses: " var: num_houses min: 4 max: 100 category: "House" ;
