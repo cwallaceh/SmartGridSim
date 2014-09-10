@@ -2,7 +2,8 @@
  *  CircleGrid
  *  Author: Priscila Angulo
  *			Carl W. Handlin
- *  Description: 
+ *  Description:
+ * 	Icons made by Freepik from www.flaticon.com is licensed under CC BY 3.0
  */
 
 model circleGrid
