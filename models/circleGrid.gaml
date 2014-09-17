@@ -33,12 +33,31 @@ global {
     int radius_lines <- 15;
     int radius_appliance <- 4;
     
+    // MySQL connection parameter
+	map<string, string>  MySQL <- [
+    'host'::'10.20.219.202',
+    'dbtype'::'MySQL',
+    'database'::'smartgrid_demandprofiles', // it may be a null string
+    'port'::'3306',
+    'user'::'smartgrid',
+    'passwd'::'smartgrid'];
+    
     init {
             create house number: num_houses ;
             create transformer number: num_transformers;
             create powerline number: num_lines;
             create generator number: num_generator;
             do build_graph; 
+            
+			ask agentDB {
+				do connect (params: MySQL);
+				
+				if (self testConnection(params:MySQL)){
+        			write "Connection is OK" ;
+				}else{
+        			write "Connection is false" ;
+				}  
+			}
     }
     
     action build_graph {
@@ -86,7 +105,7 @@ species agentDB parent: AgentDB {
 		return ((radius *(sin(index*degree))) + (grid_height/4));
 	}
 	
-	float gen_energy <- max_energy_produced;
+	float gen_energy <- max_energy_produced;    
 	
 }
 
