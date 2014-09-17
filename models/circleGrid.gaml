@@ -77,7 +77,7 @@ global {
 
 /////////////////////////////////////////////////////////////GENERIC
 
-species generic { 
+species agentDB parent: AgentDB { 
 	float get_coordinate_x (int radius, int index, float degree){
 		return ((radius *(cos(index*degree))) + (grid_width/4));
 	}
@@ -92,7 +92,7 @@ species generic {
 
 /////////////////////////////////////////////////////////////HOUSE
 
-species house parent: generic {
+species house parent: agentDB {
     int house_size <- 4;
     int my_index <- house index_of self;
     int num_appliances <- rnd(5) + 2;
@@ -125,7 +125,7 @@ species house parent: generic {
 	
 /////////////////////////////////////////////////////////////APPLIANCES
 	
-	species appliance parent: generic {
+	species appliance parent: agentDB {
 		int appliance_size <- 2;
 		int my_appliance_index <- appliance index_of self;
 		float my_appliance_x <- house(host).my_x + (radius_appliance *(cos(my_appliance_index*degree_appliance))); 
@@ -161,7 +161,7 @@ species house parent: generic {
 
 /////////////////////////////////////////////////////////////TRANSFORMER
 
-species transformer parent: generic  {
+species transformer parent: agentDB {
     int transformer_size <- 6;
     int my_index <- transformer index_of self;
     list<house> my_houses <- [];
@@ -192,7 +192,7 @@ species transformer parent: generic  {
 
 /////////////////////////////////////////////////////////////POWER LINES
 
-species powerline parent: generic {
+species powerline parent: agentDB {
     int lines_size <- 10;
     int my_index <- powerline index_of self;
 	list<transformer> my_transformers <- [];
@@ -223,7 +223,7 @@ species powerline parent: generic {
 
 /////////////////////////////////////////////////////////////GENERATOR
 
-species generator parent: generic {
+species generator parent: agentDB {
 	int generator_size <- 10;
 	list<powerline> my_lines update:(list (species(powerline)));
 	float my_x <- (grid_width/4);
