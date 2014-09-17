@@ -51,12 +51,6 @@ global {
             
 			ask agentDB {
 				do connect (params: MySQL);
-				
-				if (self testConnection(params:MySQL)){
-        			write "Connection is OK" ;
-				}else{
-        			write "Connection is false" ;
-				}  
 			}
     }
     
@@ -90,12 +84,11 @@ global {
 	  		}
 	  	} 
 	  	
-	  	write general_graph;
+	  	//write general_graph;
 	 }  
 }
 
-/////////////////////////////////////////////////////////////GENERIC
-
+//AgentDB
 species agentDB parent: AgentDB { 
 	float get_coordinate_x (int radius, int index, float degree){
 		return ((radius *(cos(index*degree))) + (grid_width/4));
@@ -105,12 +98,10 @@ species agentDB parent: AgentDB {
 		return ((radius *(sin(index*degree))) + (grid_height/4));
 	}
 	
-	float gen_energy <- max_energy_produced;    
-	
+	float gen_energy <- max_energy_produced;
 }
 
-/////////////////////////////////////////////////////////////HOUSE
-
+//House
 species house parent: agentDB {
     int house_size <- 4;
     int my_index <- house index_of self;
@@ -142,8 +133,7 @@ species house parent: agentDB {
 		do get_my_appliances;
 	}
 	
-/////////////////////////////////////////////////////////////APPLIANCES
-	
+//Appliances
 	species appliance parent: agentDB {
 		int appliance_size <- 2;
 		int my_appliance_index <- appliance index_of self;
@@ -178,8 +168,7 @@ species house parent: agentDB {
 	
 }
 
-/////////////////////////////////////////////////////////////TRANSFORMER
-
+//Transformers
 species transformer parent: agentDB {
     int transformer_size <- 6;
     int my_index <- transformer index_of self;
@@ -209,8 +198,7 @@ species transformer parent: agentDB {
     }
 }
 
-/////////////////////////////////////////////////////////////POWER LINES
-
+//Power lines
 species powerline parent: agentDB {
     int lines_size <- 10;
     int my_index <- powerline index_of self;
@@ -240,8 +228,7 @@ species powerline parent: agentDB {
     }
 }
 
-/////////////////////////////////////////////////////////////GENERATOR
-
+//Generator
 species generator parent: agentDB {
 	int generator_size <- 10;
 	list<powerline> my_lines update:(list (species(powerline)));
@@ -260,25 +247,31 @@ species generator parent: agentDB {
    	reflex die when: max_energy_produced <= 0 {
 	      	do die ;
 	}
-
+	
+	//Connection test
+	init {
+		if (self testConnection(params:MySQL)){
+        write "Connection is OK" ;
+		}else{
+        write "Connection is false" ;
+		} 
+	}
+	
 }
 
-/////////////////////////////////////////////////////////////GRAPH
-
+//Graph
 species edge_agent {
     aspect base {
             draw shape color: rgb('black');
     }
 }
 
-/////////////////////////////////////////////////////////////LAND
-
+//Land
 grid land width: grid_width height: grid_height neighbours: 4 {
 	rgb color <- rgb('white'); 
 }
 
-/////////////////////////////////////////////////////////////EXPERIMENT
-
+//Experiment
 experiment test type: gui {
     parameter "Number of houses: " var: num_houses min: 4 max: 100 category: "House" ;
     
