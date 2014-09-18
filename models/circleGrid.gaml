@@ -45,10 +45,6 @@ global {
             create powerline number: num_lines;
             create generator number: num_generator;
             do build_graph; 
-            
-			ask agentDB {
-				do connect (params: MySQL);
-			}
     }
     
     action build_graph {
@@ -127,15 +123,12 @@ species house parent: agentDB {
 	reflex getdemand{
 		 write("houseprofile: " + houseprofile);
 		 write("time: " + time);
-				
-		ask AgentDB{
-			//do connect(params: MySQL);
-		 	//list<list> t <- list<list> (self select(select:"SELECT h0 FROM caso0 where timestep = " + time + ";"));
-		 	list<list> t <- list<list> (self select(select:"SELECT h" + houseprofile + " FROM caso0 where timestep = " + time + ";"));
-		 	//float t <- list<list> (self select(select:"SELECT h" + houseprofile + " FROM caso0 where timestep = " + time + ";"));
+			
+			list<list> t <- list<list> (self select(select:"SELECT h" + houseprofile + " FROM caso0 where timestep = " + time + ";"));
+		 	//float t <- float (self select(select:"SELECT h" + houseprofile + " FROM caso0 where timestep = " + time + ";"));
 		 	write("sdf");
-		 	write("dataset: " + t[2]);
-		 }
+		 	write(t[2]);
+		 	
 		 	if(time = 1440)
 		 	{
 		 		time <- 0;
@@ -148,6 +141,7 @@ species house parent: agentDB {
 	
 	init{
 		do get_my_appliances;
+		do connect (params: MySQL);
 	}
 	
 //Appliances
