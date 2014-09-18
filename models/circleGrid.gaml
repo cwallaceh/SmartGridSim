@@ -13,9 +13,6 @@ model circleGrid
 global {
 	graph general_graph;
 	
-	float max_energy_produced <- 100.0;
-	float appliance_energy_consumption <- 0.005;
-	
 	int grid_width <- 200;
 	int grid_height <- 200;
 
@@ -35,12 +32,12 @@ global {
     
     // MySQL connection parameter
 	map<string, string>  MySQL <- [
-    'host'::'10.20.219.202',
+    'host'::'localhost',
     'dbtype'::'MySQL',
-    'database'::'smartgrid_demandprofiles', // it may be a null string
+    'database'::'sgtest', // it may be a null string
     'port'::'3306',
-    'user'::'smartgrid',
-    'passwd'::'smartgrid'];
+    'user'::'root',
+    'passwd'::'anes9car'];
     
     init {
             create house number: num_houses ;
@@ -58,7 +55,6 @@ global {
 	  	general_graph <- graph([]);
 	  	loop gn over: generator {
 	  		loop pl over: powerline {
-	  			//create edge_agent with: [shape::link(gn::ln)] returns: edges_created;
 	  			create edge_agent with: [shape::link({gn.my_x, gn.my_y}::{pl.my_x, pl.my_y})] returns: edges_created;
 	  			add edge:(gn::pl)::first(edges_created) to: general_graph;
 	  		}
@@ -83,7 +79,6 @@ global {
 	  			add edge:(tr_2::hs)::first(edges_created) to: general_graph;
 	  		}
 	  	} 
-	  	
 	  	//write general_graph;
 	 }  
 }
@@ -97,15 +92,15 @@ species agentDB parent: AgentDB {
 	float get_coordinate_y (int radius, int index, float degree){
 		return ((radius *(sin(index*degree))) + (grid_height/4));
 	}
-	
-	float gen_energy <- max_energy_produced;
 }
 
 //House
 species house parent: agentDB {
     int house_size <- 4;
+    int time <- 0;
     int my_index <- house index_of self;
     int num_appliances <- rnd(5) + 2;
+    int houseprofile <- rnd(9) + 1;
     list<appliance> my_appliances <- [];
     file my_icon <- file("../images/House.gif") ;
     
@@ -129,6 +124,28 @@ species house parent: agentDB {
 	  	}
 	}
 	
+	reflex getdemand{
+		 write("houseprofile: " + houseprofile);
+		 write("time: " + time);
+				
+		ask AgentDB{
+			//do connect(params: MySQL);
+		 	//list<list> t <- list<list> (self select(select:"SELECT h0 FROM caso0 where timestep = " + time + ";"));
+		 	list<list> t <- list<list> (self select(select:"SELECT h" + houseprofile + " FROM caso0 where timestep = " + time + ";"));
+		 	//float t <- list<list> (self select(select:"SELECT h" + houseprofile + " FROM caso0 where timestep = " + time + ";"));
+		 	write("sdf");
+		 	write("dataset: " + t[2]);
+		 }
+		 	if(time = 1440)
+		 	{
+		 		time <- 0;
+		 	}
+		 	else
+		 	{
+		 		time <- time + 1;
+		 	}
+	}
+	
 	init{
 		do get_my_appliances;
 	}
@@ -145,24 +162,16 @@ species house parent: agentDB {
 		//int type <- rnd_choice(["Refrigerator", "Washermachine", "Dishwasher"]); 
 		int demand_pattern <- 1; //todo: list per slot of time the amount of power it will consume
 		
-		float energy_consumed <- appliance_energy_consumption;
-		float energy <- rnd(100);
-		
-		reflex consume when: energy > 0 {
-	      	energy <- energy - energy_consumed;
-	      	max_energy_produced <- max_energy_produced - energy_consumed;
-	   	}
-		
-		reflex die when: energy <= 0 {
-	      	do die ;
-	   	}
+
+		//reflex consume when: energy > 0 {
+	    //}
 		
 		aspect appliance_base {
 			draw sphere(appliance_size) color: rgb('purple') at:{my_appliance_x, my_appliance_y, 0};
 		}
 		
 		aspect appliance_icon {
-        draw my_icon size: appliance_size color: rgb('yellow') at:{my_appliance_x, my_appliance_y, 0};
+        draw my_icon size: appliance_size at:{my_appliance_x, my_appliance_y, 0};
     	}
 	}
 	
@@ -244,17 +253,21 @@ species generator parent: agentDB {
         draw my_icon size: generator_size at: {my_x , my_y, 0 } ;
     }
     
-   	reflex die when: max_energy_produced <= 0 {
-	      	do die ;
-	}
-	
-	//Connection test
-	init {
-		if (self testConnection(params:MySQL)){
+    action checkCon{
+    	if (self testConnection(params:MySQL)){
         write "Connection is OK" ;
 		}else{
         write "Connection is false" ;
-		} 
+		}
+    }
+    
+    reflex checkConn{
+    	do checkCon;
+    }
+    
+	//Connection test
+	init {
+		do checkCon; 
 	}
 	
 }
