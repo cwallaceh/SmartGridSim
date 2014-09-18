@@ -36,8 +36,8 @@ global {
     'dbtype'::'MySQL',
     'database'::'sgtest', // it may be a null string
     'port'::'3306',
-    'user'::'root',
-    'passwd'::'anes9car'];
+    'user'::'smartgrid',
+    'passwd'::'smartgrid'];
     
     init {
             create house number: num_houses ;
@@ -98,7 +98,8 @@ species house parent: agentDB {
     int num_appliances <- rnd(5) + 2;
     int houseprofile <- rnd(9) + 1;
     list<appliance> my_appliances <- [];
-    file my_icon <- file("../images/House.gif") ;
+    file my_icon <- file("../images/House.gif");
+    float demand <- 0.0;
     
     float my_x <- get_coordinate_x(radius_house, my_index, degree_house);
     float my_y <- get_coordinate_y(radius_house, my_index, degree_house);
@@ -111,6 +112,7 @@ species house parent: agentDB {
 	
 	aspect icon {
         draw my_icon size: house_size at: {my_x , my_y, 0 } ;
+        draw string(demand) size: 3 color: rgb("black") at: {my_x , my_y, 0 };
     }
 	
 	action get_my_appliances{
@@ -126,7 +128,7 @@ species house parent: agentDB {
 			
 			list<list> t <- list<list> (self select(select:"SELECT h" + houseprofile + " FROM caso0 where timestep = " + time + ";"));
 		 	//float t <- float (self select(select:"SELECT h" + houseprofile + " FROM caso0 where timestep = " + time + ";"));
-		 	float demand <- float (t[2][0][0]);
+		 	demand <- float (t[2][0][0]);
 		 	//write(t[2][0][0]); 
 		 	write(demand);
 		 	
