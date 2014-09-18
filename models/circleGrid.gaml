@@ -12,6 +12,7 @@ model circleGrid
 
 global {
 	graph general_graph;
+	float totalenergy <- 0.0;
 	
 	int grid_width <- 200;
 	int grid_height <- 200;
@@ -123,16 +124,11 @@ species house parent: agentDB {
 	}
 	
 	reflex getdemand{
-		 write("houseprofile: " + houseprofile);
-		 write("time: " + time);
-			
 			list<list> t <- list<list> (self select(select:"SELECT h" + houseprofile + " FROM caso0 where timestep = " + time + ";"));
 		 	//float t <- float (self select(select:"SELECT h" + houseprofile + " FROM caso0 where timestep = " + time + ";"));
 		 	demand <- float (t[2][0][0]);
-		 	//write(t[2][0][0]); 
-		 	write(demand);
 		 	
-		 	if(time = 1440)
+		 	if(time = 1439)
 		 	{
 		 		time <- 0;
 		 	}
@@ -140,6 +136,9 @@ species house parent: agentDB {
 		 	{
 		 		time <- time + 1;
 		 	}
+		 	
+			totalenergy <- 0.0;
+		 	totalenergy <- totalenergy + demand;
 	}
 	
 	init{
@@ -158,10 +157,6 @@ species house parent: agentDB {
 		int policy <- rnd(3) + 1;
 		//int type <- rnd_choice(["Refrigerator", "Washermachine", "Dishwasher"]); 
 		int demand_pattern <- 1; //todo: list per slot of time the amount of power it will consume
-		
-
-		//reflex consume when: energy > 0 {
-	    //}
 		
 		aspect appliance_base {
 			draw sphere(appliance_size) color: rgb('purple') at:{my_appliance_x, my_appliance_y, 0};
@@ -258,10 +253,6 @@ species generator parent: agentDB {
 		}
     }
     
-    reflex checkConn{
-    	do checkCon;
-    }
-    
 	//Connection test
 	init {
 		do checkCon; 
@@ -296,5 +287,10 @@ experiment test type: gui {
                     species generator aspect: icon;
                     species edge_agent aspect: base;
             }
-    }
+            display chart_display {
+  					chart "Total demand" type: series {
+  					data "demand" value: totalenergy color: rgb('red') ;
+					}
+    		}
+	}
 }
