@@ -126,8 +126,9 @@ species house parent: agentDB {
 			
 			list<list> t <- list<list> (self select(select:"SELECT h" + houseprofile + " FROM caso0 where timestep = " + time + ";"));
 		 	//float t <- float (self select(select:"SELECT h" + houseprofile + " FROM caso0 where timestep = " + time + ";"));
-		 	write("sdf");
-		 	write(t[2]);
+		 	float demand <- float (t[2][0][0]);
+		 	//write(t[2][0][0]); 
+		 	write(demand);
 		 	
 		 	if(time = 1440)
 		 	{
