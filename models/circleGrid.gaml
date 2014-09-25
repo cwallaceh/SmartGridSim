@@ -12,7 +12,9 @@ model circleGrid
 
 global {
 	graph general_graph;
-	float totalenergy <- 0.0;
+	float totalenergy_smart <- 0.0;
+	float totalenergy_nonsmart <- 0.0;
+	int time_step <- 748;
 	
 	int grid_width <- 200;
 	int grid_height <- 200;
@@ -30,22 +32,29 @@ global {
     int radius_transformer <- 30;
     int radius_lines <- 15;
     int radius_appliance <- 4;
+
+    int min_household_profile_id;
+    int max_household_profile_id;
     
     // MySQL connection parameter
 	map<string, string>  MySQL <- [
     'host'::'localhost',
     'dbtype'::'MySQL',
-    'database'::'sgtest', // it may be a null string
+    'database'::'smartgrid_demandprofiles', // it may be a null string
     'port'::'3306',
     'user'::'smartgrid',
     'passwd'::'smartgrid'];
     
     init {
-            create house number: num_houses ;
-            create transformer number: num_transformers;
-            create powerline number: num_lines;
-            create generator number: num_generator;
-            do build_graph; 
+            create agentDB number: 1;
+			ask agentDB{
+				do get_household_profiles_ids;	
+			}
+			create house number: num_houses ;
+			create transformer number: num_transformers;
+			create powerline number: num_lines;
+			create generator number: num_generator;
+			do build_graph;
     }
     
     action build_graph {
@@ -77,7 +86,21 @@ global {
 	  		}
 	  	} 
 	  	//write general_graph;
-	 }  
+	 }
+	 
+	 reflex restart_energy_and_time{
+	 	totalenergy_smart <- 0.0;
+	 	totalenergy_nonsmart <- 0.0;
+	 	
+	 	if(time_step = 1440)
+	 	{
+	 		time_step <- 0;
+	 	}
+	 	else
+	 	{
+	 		time_step <- time_step + 1;
+	 	}
+ 	}	  
 }
 
 //AgentDB
@@ -89,23 +112,47 @@ species agentDB parent: AgentDB {
 	float get_coordinate_y (int radius, int index, float degree){
 		return ((radius *(sin(index*degree))) + (grid_height/4));
 	}
+	
+	action check_db_connection{
+    	if (self testConnection(params:MySQL)){
+        	write "Connection is OK" ;
+		}else{
+        	write "Connection is false" ;
+		}
+    }
+	
+	action get_household_profiles_ids
+	{
+		do connect (params: MySQL);
+		
+		list<list> profileMin <- list<list> ( self select(select:"SELECT min(id_household_profile) FROM household_profiles;"));
+		min_household_profile_id <- int (profileMin[2][0][0]);
+		
+		list<list> profileMax <- list<list> ( self select(select:"SELECT max(id_household_profile) FROM household_profiles;"));
+		max_household_profile_id <- int (profileMax[2][0][0]);
+	} 
+	
+	init{
+		do check_db_connection;
+	}
 }
 
 //House
 species house parent: agentDB {
     int house_size <- 4;
-    int time <- 0;
     int my_index <- house index_of self;
-    int num_appliances <- rnd(5) + 2;
-    int houseprofile <- rnd(9) + 1;
-    list<appliance> my_appliances <- [];
+    int houseprofile <- 598; // rnd(max_household_profile_id - min_household_profile_id) + min_household_profile_id;
+    int num_appliances;
+    
+    list<smart_appliance> my_appliances <- [];
+    list<list> list_appliances_db;
     file my_icon <- file("../images/House.gif");
     float demand <- 0.0;
     
     float my_x <- get_coordinate_x(radius_house, my_index, degree_house);
     float my_y <- get_coordinate_y(radius_house, my_index, degree_house);
     
-    float degree_appliance <- (360 / num_appliances);
+    float degree_appliance;
             
     aspect base {
 		draw sphere(house_size) color: rgb('blue') at: {my_x , my_y, 0 } ;
@@ -117,61 +164,122 @@ species house parent: agentDB {
     }
 	
 	action get_my_appliances{
-		loop i from: 1 to: num_appliances{
-			create appliance number: 1 returns: appliance_created;
-	  		add appliance(appliance_created) to: my_appliances;
-	  	}
-	}
-	
-	reflex getdemand{
-			list<list> t <- list<list> (self select(select:"SELECT h" + houseprofile + " FROM caso0 where timestep = " + time + ";"));
-		 	//float t <- float (self select(select:"SELECT h" + houseprofile + " FROM caso0 where timestep = " + time + ";"));
-		 	demand <- float (t[2][0][0]);
-		 	
-		 	if(time = 1439)
-		 	{
-		 		time <- 0;
-		 	}
-		 	else
-		 	{
-		 		time <- time + 1;
-		 	}
-		 	
-			totalenergy <- 0.0;
-		 	totalenergy <- totalenergy + demand;
+		ask agentDB{
+			myself.list_appliances_db <- list<list> (self select(select:"SELECT DISTINCT a.id_appliance, a.appliance_description FROM appliances a JOIN appliances_profiles ap ON a.id_appliance = ap.id_appliance WHERE ap.id_household_profile = "+ myself.houseprofile +" AND a.isSmart = 1;"));	
+		}
+		
+		num_appliances <- length( (list_appliances_db[2]) );
+		degree_appliance <- (360 / (num_appliances + 1) ); //+1 because of other loads
+		
+ 		loop i from: 1 to: num_appliances{
+ 			create smart_appliance number: 1 returns: appliance_created;
+			ask appliance_created{
+				appliance_id <- int (myself.list_appliances_db[2][i-1][0]);
+				appliance_name <- string (myself.list_appliances_db[2][i-1][1]);
+				houseprofile <-  myself.houseprofile;
+			}
+ 	  		add smart_appliance(appliance_created) to: my_appliances;
+ 	  	}
+ 	  	
+ 	  	create other_loads number: 1 returns: other_loads_created;
+ 	  	ask other_loads_created{
+ 	  		houseprofile <-  myself.houseprofile;
+ 	  	}
+ 	  	
 	}
 	
 	init{
 		do get_my_appliances;
-		do connect (params: MySQL);
+		write("house_index: " + my_index + " house_profile: " + houseprofile);
 	}
 	
-//Appliances
-	species appliance parent: agentDB {
+//Smart Appliances  (subspecies of house)
+	species smart_appliance parent: agentDB {
 		int appliance_size <- 2;
-		int my_appliance_index <- appliance index_of self;
+		int my_appliance_index <- smart_appliance index_of self;
 		float my_appliance_x <- house(host).my_x + (radius_appliance *(cos(my_appliance_index*degree_appliance))); 
 		float my_appliance_y <- house(host).my_y + (radius_appliance *(sin(my_appliance_index*degree_appliance)));
 		file my_icon <- file("../images/Appliance.gif") ;
+		string appliance_name;
+		int appliance_id;
+		int houseprofile;
+		list<list> energy;
+		float current_demand;
 		
-		int policy <- rnd(3) + 1;
+		//int policy <- rnd(3) + 1;
 		//int type <- rnd_choice(["Refrigerator", "Washermachine", "Dishwasher"]); 
-		int demand_pattern <- 1; //todo: list per slot of time the amount of power it will consume
+		//int demand_pattern <- 1; //todo: list per slot of time the amount of power it will consume
 		
+		//reflex consume when: energy > 0 {
+	    //}
+	    
+	    reflex getdemand{
+	    	ask agentDB{
+				myself.energy <- list<list> (self select(select:"SELECT energy FROM appliances_profiles WHERE id_appliance = "+myself.appliance_id+" AND id_household_profile = "+myself.houseprofile+" AND TIME_TO_SEC(time)/60 = "+time_step+";"));	
+			}
+	    	//write("SELECT energy FROM appliances_profiles WHERE id_appliance = "+appliance_id+" AND id_household_profile = "+houseprofile+" AND TIME_TO_SEC(time)/60 = "+time_step+";");
+			
+		 	current_demand <- (float (energy[2][0][0]));
+		 	
+	 		house(host).demand <- 0.0;
+	 	
+		 	house(host).demand <- house(host).demand + current_demand;
+		 	totalenergy_smart <- totalenergy_smart + current_demand;
+		 	/*if (current_demand != 0.0)
+		 	{
+		 		write("time: "+time_step+" house_index: "+my_index+" appliance_index: "+my_appliance_index+" current_demand: " + current_demand + " demand: " + demand);
+		 	}*/
+		}
+
 		aspect appliance_base {
 			draw sphere(appliance_size) color: rgb('purple') at:{my_appliance_x, my_appliance_y, 0};
 		}
 		
 		aspect appliance_icon {
-        draw my_icon size: appliance_size at:{my_appliance_x, my_appliance_y, 0};
+        	draw my_icon size: appliance_size at:{my_appliance_x, my_appliance_y, 0};
+        	draw string(current_demand) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
     	}
 	}
+
+//Other loads (subspecies of house)
+	species other_loads parent: agentDB {
+		int appliance_size <- 2;
+		int houseprofile;
+		int my_appliance_index <- house(host).num_appliances;
+		float my_appliance_x <- house(host).my_x + (radius_appliance *(cos(my_appliance_index*degree_appliance))); 
+		float my_appliance_y <- house(host).my_y + (radius_appliance *(sin(my_appliance_index*degree_appliance)));
+		file my_icon <- file("../images/Appliance.gif") ;
+		list<list> energy;
+		float current_demand;
+		
+		reflex getdemand{
+			ask agentDB{
+				myself.energy <- list<list> (self select(select:"SELECT SUM(energy) energy FROM appliances_profiles WHERE id_household_profile = "+myself.houseprofile+" AND TIME_TO_SEC(time)/60 = "+time_step+" AND id_appliance NOT IN (SELECT id_appliance FROM appliances WHERE isSmart = 1);"));	
+			}
+			
+			current_demand <- (float (energy[2][0][0]));
+			 	
+		 	house(host).demand <- house(host).demand + current_demand;
+		 	totalenergy_nonsmart <- totalenergy_nonsmart + current_demand;
+		 	/*if (current_demand != 0.0)
+		 	{
+		 		write("time: "+time_step+" house_index: "+my_index+" appliance_index: other_loads current_demand: " + current_demand + " demand: " + demand);
+		 	}*/
+		}
+			
+		
+		aspect appliance_icon {
+        	draw my_icon size: appliance_size color:rgb("blue")  at:{my_appliance_x, my_appliance_y, 0};
+        	draw string(current_demand) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
+    	}
+		
+	}	
 	
 }
 
 //Transformers
 species transformer parent: agentDB {
-    int transformer_size <- 6;
+    int transformer_size <- 4;
     int my_index <- transformer index_of self;
     list<house> my_houses <- [];
     file my_icon <- file("../images/Transformer.gif") ;
@@ -201,7 +309,7 @@ species transformer parent: agentDB {
 
 //Power lines
 species powerline parent: agentDB {
-    int lines_size <- 10;
+    int lines_size <- 7;
     int my_index <- powerline index_of self;
 	list<transformer> my_transformers <- [];
     file my_icon <- file("../images/PowerLines.gif") ;
@@ -243,21 +351,7 @@ species generator parent: agentDB {
 	
 	aspect icon {
         draw my_icon size: generator_size at: {my_x , my_y, 0 } ;
-    }
-    
-    action checkCon{
-    	if (self testConnection(params:MySQL)){
-        write "Connection is OK" ;
-		}else{
-        write "Connection is false" ;
-		}
-    }
-    
-	//Connection test
-	init {
-		do checkCon; 
-	}
-	
+    }	
 }
 
 //Graph
@@ -280,7 +374,8 @@ experiment test type: gui {
             display main_display type: opengl {
             		grid land;
                     species house aspect: icon{
-						species appliance aspect: appliance_icon;
+						species smart_appliance aspect: appliance_icon;
+						species other_loads aspect: appliance_icon;
 					}
                     species transformer aspect: icon;
                     species powerline aspect: icon;
@@ -289,7 +384,8 @@ experiment test type: gui {
             }
             display chart_display {
   					chart "Total demand" type: series {
-  					data "demand" value: totalenergy color: rgb('red') ;
+  						data "smart demand" value: totalenergy_smart color: rgb('red') ;
+  						data "non-smart demand" value: totalenergy_nonsmart color: rgb('blue') ;
 					}
     		}
 	}
