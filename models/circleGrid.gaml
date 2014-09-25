@@ -14,7 +14,7 @@ global {
 	graph general_graph;
 	float totalenergy_smart <- 0.0;
 	float totalenergy_nonsmart <- 0.0;
-	int time_step <- 748;
+	int time_step <- 0; //748;
 	
 	int grid_width <- 200;
 	int grid_height <- 200;
@@ -92,7 +92,7 @@ global {
 	 	totalenergy_smart <- 0.0;
 	 	totalenergy_nonsmart <- 0.0;
 	 	
-	 	if(time_step = 1440)
+	 	if(time_step = 1439)
 	 	{
 	 		time_step <- 0;
 	 	}
@@ -141,7 +141,7 @@ species agentDB parent: AgentDB {
 species house parent: agentDB {
     int house_size <- 4;
     int my_index <- house index_of self;
-    int houseprofile <- 598; // rnd(max_household_profile_id - min_household_profile_id) + min_household_profile_id;
+    int houseprofile <- rnd(max_household_profile_id - min_household_profile_id) + min_household_profile_id; //598
     int num_appliances;
     
     list<smart_appliance> my_appliances <- [];
@@ -177,6 +177,7 @@ species house parent: agentDB {
 				appliance_id <- int (myself.list_appliances_db[2][i-1][0]);
 				appliance_name <- string (myself.list_appliances_db[2][i-1][1]);
 				houseprofile <-  myself.houseprofile;
+				do get_energy_day;
 			}
  	  		add smart_appliance(appliance_created) to: my_appliances;
  	  	}
@@ -184,6 +185,7 @@ species house parent: agentDB {
  	  	create other_loads number: 1 returns: other_loads_created;
  	  	ask other_loads_created{
  	  		houseprofile <-  myself.houseprofile;
+ 	  		do get_energy_day;
  	  	}
  	  	
 	}
@@ -214,12 +216,8 @@ species house parent: agentDB {
 	    //}
 	    
 	    reflex getdemand{
-	    	ask agentDB{
-				myself.energy <- list<list> (self select(select:"SELECT energy FROM appliances_profiles WHERE id_appliance = "+myself.appliance_id+" AND id_household_profile = "+myself.houseprofile+" AND TIME_TO_SEC(time)/60 = "+time_step+";"));	
-			}
-	    	//write("SELECT energy FROM appliances_profiles WHERE id_appliance = "+appliance_id+" AND id_household_profile = "+houseprofile+" AND TIME_TO_SEC(time)/60 = "+time_step+";");
-			
-		 	current_demand <- (float (energy[2][0][0]));
+			//write ("house_index: "+my_index+" appliance_index: "+my_appliance_index+" demand: " + energy[2][time_step][0]);
+		 	current_demand <- (float (energy[2][time_step][0]));
 		 	
 	 		house(host).demand <- 0.0;
 	 	
@@ -230,7 +228,7 @@ species house parent: agentDB {
 		 		write("time: "+time_step+" house_index: "+my_index+" appliance_index: "+my_appliance_index+" current_demand: " + current_demand + " demand: " + demand);
 		 	}*/
 		}
-
+		
 		aspect appliance_base {
 			draw sphere(appliance_size) color: rgb('purple') at:{my_appliance_x, my_appliance_y, 0};
 		}
@@ -238,6 +236,12 @@ species house parent: agentDB {
 		aspect appliance_icon {
         	draw my_icon size: appliance_size at:{my_appliance_x, my_appliance_y, 0};
         	draw string(current_demand) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
+    	}
+    	
+    	action get_energy_day{
+    		ask agentDB{
+				myself.energy <- list<list> (self select(select:"SELECT energy FROM appliances_profiles WHERE id_appliance = "+myself.appliance_id+" AND id_household_profile = "+myself.houseprofile+" ORDER BY time;"));	
+			}
     	}
 	}
 
@@ -253,11 +257,7 @@ species house parent: agentDB {
 		float current_demand;
 		
 		reflex getdemand{
-			ask agentDB{
-				myself.energy <- list<list> (self select(select:"SELECT SUM(energy) energy FROM appliances_profiles WHERE id_household_profile = "+myself.houseprofile+" AND TIME_TO_SEC(time)/60 = "+time_step+" AND id_appliance NOT IN (SELECT id_appliance FROM appliances WHERE isSmart = 1);"));	
-			}
-			
-			current_demand <- (float (energy[2][0][0]));
+			current_demand <- (float (energy[2][time_step][0]));
 			 	
 		 	house(host).demand <- house(host).demand + current_demand;
 		 	totalenergy_nonsmart <- totalenergy_nonsmart + current_demand;
@@ -272,6 +272,14 @@ species house parent: agentDB {
         	draw my_icon size: appliance_size color:rgb("blue")  at:{my_appliance_x, my_appliance_y, 0};
         	draw string(current_demand) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
     	}
+    	
+    	action get_energy_day{
+    		ask agentDB{
+				myself.energy <- list<list> (self select(select:"SELECT SUM(energy) energy, time FROM appliances_profiles WHERE id_household_profile = "+myself.houseprofile+" AND id_appliance NOT IN (SELECT id_appliance FROM appliances WHERE isSmart = 1) GROUP BY time ORDER BY time;"));	
+			}
+    	}
+    	
+    	
 		
 	}	
 	
