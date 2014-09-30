@@ -38,7 +38,7 @@ global {
     
     // MySQL connection parameter
 	map<string, string>  MySQL <- [
-    'host'::'localhost',
+    'host'::'10.20.217.219',
     'dbtype'::'MySQL',
     'database'::'smartgrid_demandprofiles', // it may be a null string
     'port'::'3306',
@@ -437,6 +437,27 @@ experiment test type: gui {
   					chart "Total demand" type: series {
   						data "smart demand" value: totalenergy_smart color: rgb('red') ;
   						data "non-smart demand" value: totalenergy_nonsmart color: rgb('blue') ;
+					}
+			}
+		    display house_chart_display {
+					chart "House demand" type: series {
+						loop hs over: house {
+  							data "house" + hs + " demand" value: house(hs).demand color: rnd_color(255) ;
+  						}
+					}
+    		}
+    		display transformer_chart_display {
+					chart "Transformer demand" type: series {
+						loop tr over: transformer {
+  							data "transformer" + tr + " demand" value: transformer(tr).demand color: rnd_color(255) ;
+  						}
+					}
+    		}
+    		display powerline_chart_display {
+					chart "Powerlines demand" type: series {
+						loop pl over: powerline {
+  							data "Powerline" + pl + " demand" value: powerline(pl).demand color: rnd_color(255) ;
+  						}
 					}
     		}
 	}
