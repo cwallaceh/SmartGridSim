@@ -63,7 +63,11 @@ global {
 	  		loop pl over: powerline {
 	  			create edge_agent with: [shape::link({gn.my_x, gn.my_y}::{pl.my_x, pl.my_y})] returns: edges_created;
 	  			add edge:(gn::pl)::first(edges_created) to: general_graph;
+	  			ask(powerline(pl)){
+	  				my_generator_index <- generator(gn).my_index;
+	  			}
 	  		}
+	  		
 	  	}
 	  	
 	  	loop pl_2 over: powerline {
@@ -73,6 +77,9 @@ global {
 	  		loop tr over: (pl_2.my_transformers) {
 	  			create edge_agent with: [shape::link({pl_2.my_x, pl_2.my_y}::{tr.my_x, tr.my_y})] returns: edges_created;
 	  			add edge:(pl_2::tr)::first(edges_created) to: general_graph;
+	  			ask(transformer(tr)){
+	  				my_powerline_index <- powerline(pl_2).my_index;
+	  			}
 	  		}
 	  	} 
 	  	
@@ -83,6 +90,9 @@ global {
 	  		loop hs over: (tr_2.my_houses) {
 	  			create edge_agent with: [shape::link({tr_2.my_x, tr_2.my_y}::{hs.my_x, hs.my_y})] returns: edges_created;
 	  			add edge:(tr_2::hs)::first(edges_created) to: general_graph;
+	  			ask house(hs){
+	  				my_transformer_index <- transformer(tr_2).my_index;
+	  			}
 	  		}
 	  	} 
 	  	//write general_graph;
@@ -92,6 +102,17 @@ global {
 	 	totalenergy_smart <- 0.0;
 	 	totalenergy_nonsmart <- 0.0;
 	 	
+	 	loop gn over: generator {
+	 		gn.demand  <- 0.0;
+	 	}
+	 	
+	 	loop pl over: powerline {
+	 		pl.demand  <- 0.0;
+	 	}
+	 	
+	 	loop tr over: transformer {
+	 		tr.demand  <- 0.0;
+	 	}
 	 	if(time_step = 1439)
 	 	{
 	 		time_step <- 0;
@@ -141,6 +162,7 @@ species agentDB parent: AgentDB {
 species house parent: agentDB {
     int house_size <- 4;
     int my_index <- house index_of self;
+    int my_transformer_index;
     int houseprofile <- rnd(max_household_profile_id - min_household_profile_id) + min_household_profile_id; //598
     int num_appliances;
     
@@ -188,6 +210,11 @@ species house parent: agentDB {
  	  		do get_energy_day;
  	  	}
  	  	
+	}
+	
+	reflex get_demand{
+		write("house: " + my_index + " transformer: " + my_transformer_index + " house demand: " + demand);
+		transformer(my_transformer_index).demand <- transformer(my_transformer_index).demand + demand;
 	}
 	
 	init{
@@ -277,20 +304,18 @@ species house parent: agentDB {
     		ask agentDB{
 				myself.energy <- list<list> (self select(select:"SELECT SUM(energy) energy, time FROM appliances_profiles WHERE id_household_profile = "+myself.houseprofile+" AND id_appliance NOT IN (SELECT id_appliance FROM appliances WHERE isSmart = 1) GROUP BY time ORDER BY time;"));	
 			}
-    	}
-    	
-    	
-		
+    	}	
 	}	
-	
 }
 
 //Transformers
 species transformer parent: agentDB {
     int transformer_size <- 4;
     int my_index <- transformer index_of self;
+    int my_powerline_index;
     list<house> my_houses <- [];
     file my_icon <- file("../images/Transformer.gif") ;
+    float demand;
     
     float my_x <- get_coordinate_x(radius_transformer, my_index, degree_transformer);
     float my_y <- get_coordinate_y(radius_transformer, my_index, degree_transformer);
@@ -313,14 +338,21 @@ species transformer parent: agentDB {
 			} 
     	}
     }
+    
+    reflex get_demand{
+    	write("transformer: " + my_index + " powerline: " + my_powerline_index + " demand: " + demand);
+    	powerline(my_powerline_index).demand <- powerline(my_powerline_index).demand + demand;
+    }
 }
 
 //Power lines
 species powerline parent: agentDB {
     int lines_size <- 7;
     int my_index <- powerline index_of self;
+    int my_generator_index;
 	list<transformer> my_transformers <- [];
     file my_icon <- file("../images/PowerLines.gif") ;
+    float demand;
     
     float my_x <- get_coordinate_x(radius_lines, my_index, degree_lines);
     float my_y <- get_coordinate_y(radius_lines, my_index, degree_lines);
@@ -343,15 +375,22 @@ species powerline parent: agentDB {
 			} 
     	}
     }
+    
+    reflex get_demand{
+    	write("powerline: " + my_index + " generator: " + my_generator_index + " demand: " + demand);
+    	generator(my_generator_index).demand <- generator(my_generator_index).demand + demand;
+    }
 }
 
 //Generator
 species generator parent: agentDB {
 	int generator_size <- 10;
+	int my_index <- generator index_of self;
 	list<powerline> my_lines update:(list (species(powerline)));
 	float my_x <- (grid_width/4);
     float my_y <- (grid_height/4);
     file my_icon <- file("../images/PowerPlant.gif") ;
+    float demand;
        
 	aspect base {
 		draw sphere(generator_size) color: rgb('red') at: {my_x , my_y , 0 } ;			
@@ -359,6 +398,10 @@ species generator parent: agentDB {
 	
 	aspect icon {
         draw my_icon size: generator_size at: {my_x , my_y, 0 } ;
+    }
+    
+    reflex get_demand{
+    	write("generator: " + my_index + " demand: " + demand);
     }	
 }
 
