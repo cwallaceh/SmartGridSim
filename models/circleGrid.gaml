@@ -11,6 +11,8 @@ model circleGrid
 /* Insert your model definition here */
 
 global {
+	int debug <- 0;
+	
 	graph general_graph;
 	float totalenergy_smart <- 0.0;
 	float totalenergy_nonsmart <- 0.0;
@@ -38,7 +40,7 @@ global {
     
     // MySQL connection parameter
 	map<string, string>  MySQL <- [
-    'host'::'10.20.217.219',
+    'host'::'localhost',
     'dbtype'::'MySQL',
     'database'::'smartgrid_demandprofiles', // it may be a null string
     'port'::'3306',
@@ -213,7 +215,10 @@ species house parent: agentDB {
 	}
 	
 	reflex get_demand{
-		write("house: " + my_index + " transformer: " + my_transformer_index + " house demand: " + demand);
+		if (debug = 1)
+		{
+			write("house: " + my_index + " transformer: " + my_transformer_index + " house demand: " + demand);
+		}
 		transformer(my_transformer_index).demand <- transformer(my_transformer_index).demand + demand;
 	}
 	
@@ -340,7 +345,10 @@ species transformer parent: agentDB {
     }
     
     reflex get_demand{
-    	write("transformer: " + my_index + " powerline: " + my_powerline_index + " demand: " + demand);
+    	if (debug = 1)
+		{
+			write("transformer: " + my_index + " powerline: " + my_powerline_index + " demand: " + demand);
+		}
     	powerline(my_powerline_index).demand <- powerline(my_powerline_index).demand + demand;
     }
 }
@@ -377,7 +385,10 @@ species powerline parent: agentDB {
     }
     
     reflex get_demand{
-    	write("powerline: " + my_index + " generator: " + my_generator_index + " demand: " + demand);
+    	if (debug = 1)
+		{
+			write("powerline: " + my_index + " generator: " + my_generator_index + " demand: " + demand);
+		}
     	generator(my_generator_index).demand <- generator(my_generator_index).demand + demand;
     }
 }
@@ -401,7 +412,10 @@ species generator parent: agentDB {
     }
     
     reflex get_demand{
-    	write("generator: " + my_index + " demand: " + demand);
+    	if (debug = 1)
+		{
+			write("generator: " + my_index + " demand: " + demand);
+		}
     }	
 }
 
@@ -419,7 +433,8 @@ grid land width: grid_width height: grid_height neighbours: 4 {
 
 //Experiment
 experiment test type: gui {
-    parameter "Number of houses: " var: num_houses min: 4 max: 100 category: "House" ;
+    //parameter "Number of houses: " var: num_houses min: 4 max: 100 category: "House" ;
+    parameter "Debug?: " var: debug min: 0 max: 1 category: "General configuration" ;
     
     output {
             display main_display type: opengl {
