@@ -14,8 +14,8 @@ global {
 	int debug <- 0;
 	
 	graph general_graph;
-	float totalenergy_smart <- 0.0;
-	float totalenergy_nonsmart <- 0.0;
+	float totalpower_smart <- 0.0;
+	float totalpower_nonsmart <- 0.0;
 	int time_step <- 0; //748;
 	
 	int grid_width <- 200;
@@ -30,13 +30,16 @@ global {
 	float degree_transformer <- (360 / num_transformers);
 	float degree_lines <- (360 / num_lines);
 	
-    int radius_house <- 55;
+    int radius_house <- 50;
     int radius_transformer <- 30;
     int radius_lines <- 15;
-    int radius_appliance <- 4;
+    int radius_appliance <- 3;
 
     int min_household_profile_id;
     int max_household_profile_id;
+    
+    float base_price <- 1.00; //per kwh
+    float power_excess <- 0.00;
     
     // MySQL connection parameter
 	map<string, string>  MySQL <- [
@@ -100,9 +103,9 @@ global {
 	  	//write general_graph;
 	 }
 	 
-	 reflex restart_energy_and_time{
-	 	totalenergy_smart <- 0.0;
-	 	totalenergy_nonsmart <- 0.0;
+	 reflex restart_power_and_time{
+	 	totalpower_smart <- 0.0;
+	 	totalpower_nonsmart <- 0.0;
 	 	
 	 	loop gn over: generator {
 	 		gn.demand  <- 0.0;
@@ -167,6 +170,7 @@ species house parent: agentDB {
     int my_transformer_index;
     int houseprofile <- rnd(max_household_profile_id - min_household_profile_id) + min_household_profile_id; //598
     int num_appliances;
+    float smart_budget <- rnd(80.0) + 20.0; 
     
     list<smart_appliance> my_appliances <- [];
     list<list> list_appliances_db;
@@ -177,6 +181,7 @@ species house parent: agentDB {
     float my_y <- get_coordinate_y(radius_house, my_index, degree_house);
     
     float degree_appliance;
+    int priority_to_assign;
             
     aspect base {
 		draw sphere(house_size) color: rgb('blue') at: {my_x , my_y, 0 } ;
@@ -194,14 +199,24 @@ species house parent: agentDB {
 		
 		num_appliances <- length( (list_appliances_db[2]) );
 		degree_appliance <- (360 / (num_appliances + 1) ); //+1 because of other loads
+		list<int> priorities <- []; 
+		
+		loop i from: 0 to: (num_appliances - 1){
+			add (i+1) to: priorities;
+		}
 		
  		loop i from: 1 to: num_appliances{
  			create smart_appliance number: 1 returns: appliance_created;
+ 			
+ 			priority_to_assign <- one_of(priorities);
+ 			remove priority_to_assign from: priorities;   
+
 			ask appliance_created{
 				appliance_id <- int (myself.list_appliances_db[2][i-1][0]);
 				appliance_name <- string (myself.list_appliances_db[2][i-1][1]);
+				priority <- myself.priority_to_assign;
 				houseprofile <-  myself.houseprofile;
-				do get_energy_day;
+				do get_power_day;
 			}
  	  		add smart_appliance(appliance_created) to: my_appliances;
  	  	}
@@ -209,11 +224,11 @@ species house parent: agentDB {
  	  	create other_loads number: 1 returns: other_loads_created;
  	  	ask other_loads_created{
  	  		houseprofile <-  myself.houseprofile;
- 	  		do get_energy_day;
+ 	  		do get_power_day;
  	  	}
  	  	
 	}
-	
+	 
 	reflex get_demand{
 		if (debug = 1)
 		{
@@ -226,9 +241,39 @@ species house parent: agentDB {
 		do get_my_appliances;
 		write("house_index: " + my_index + " house_profile: " + houseprofile);
 	}
-	
+//Other loads (subspecies of house)
+	species other_loads parent: agentDB {
+		int appliance_size <- 2;
+		int houseprofile;
+		int my_appliance_index <- house(host).num_appliances;
+		float my_appliance_x <- house(host).my_x + (radius_appliance *(cos(my_appliance_index*degree_appliance))); 
+		float my_appliance_y <- house(host).my_y + (radius_appliance *(sin(my_appliance_index*degree_appliance)));
+		file my_icon <- file("../images/Appliance.gif") ;
+		list<list> power;
+		float current_demand;
+		
+		reflex getdemand{
+			current_demand <- (float (power[2][time_step][0]));
+			
+			house(host).demand <- 0.0;
+		 	house(host).demand <- house(host).demand + current_demand;
+		 	totalpower_nonsmart <- totalpower_nonsmart + current_demand;
+		}
+			
+		aspect appliance_icon {
+        	draw my_icon size: appliance_size color:rgb("blue")  at:{my_appliance_x, my_appliance_y, 0};
+        	draw string(current_demand) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
+    	}
+    	
+    	action get_power_day{
+    		ask agentDB{
+				myself.power <- list<list> (self select(select:"SELECT SUM(power) power, time FROM appliances_profiles WHERE id_household_profile = "+myself.houseprofile+" AND id_appliance NOT IN (SELECT id_appliance FROM appliances WHERE isSmart = 1) GROUP BY time ORDER BY time;"));	
+			}
+    	}	
+	}	
+
 //Smart Appliances  (subspecies of house)
-	species smart_appliance parent: agentDB {
+	species smart_appliance  parent: agentDB {
 		int appliance_size <- 2;
 		int my_appliance_index <- smart_appliance index_of self;
 		float my_appliance_x <- house(host).my_x + (radius_appliance *(cos(my_appliance_index*degree_appliance))); 
@@ -237,24 +282,20 @@ species house parent: agentDB {
 		string appliance_name;
 		int appliance_id;
 		int houseprofile;
-		list<list> energy;
+		list<list> energyandpower;
+		list<float> powerbid;
 		float current_demand;
+		int priority; //the higher the number the higher the priority
 		
-		//int policy <- rnd(3) + 1;
-		//int type <- rnd_choice(["Refrigerator", "Washermachine", "Dishwasher"]); 
-		//int demand_pattern <- 1; //todo: list per slot of time the amount of power it will consume
-		
-		//reflex consume when: energy > 0 {
-	    //}
-	    
 	    reflex getdemand{
-			//write ("house_index: "+my_index+" appliance_index: "+my_appliance_index+" demand: " + energy[2][time_step][0]);
-		 	current_demand <- (float (energy[2][time_step][0]));
+	    	
+			//write ("house_index: "+my_index+" appliance_index: "+my_appliance_index+" demand: " + power[2][time_step][0]);
+		 	//current_demand <- (float (power[2][time_step][0]));
 		 	
-	 		house(host).demand <- 0.0;
-	 	
-		 	house(host).demand <- house(host).demand + current_demand;
-		 	totalenergy_smart <- totalenergy_smart + current_demand;
+		 	//house(host).demand <- house(host).demand + current_demand;
+		 	//totalpower_smart <- totalpower_smart + current_demand;
+		 	
+		 	
 		 	/*if (current_demand != 0.0)
 		 	{
 		 		write("time: "+time_step+" house_index: "+my_index+" appliance_index: "+my_appliance_index+" current_demand: " + current_demand + " demand: " + demand);
@@ -267,50 +308,36 @@ species house parent: agentDB {
 		
 		aspect appliance_icon {
         	draw my_icon size: appliance_size at:{my_appliance_x, my_appliance_y, 0};
-        	draw string(current_demand) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
+        	//draw string(current_demand) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
+        	draw string(priority) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
     	}
     	
-    	action get_energy_day{
+    	action get_power_day{
     		ask agentDB{
-				myself.energy <- list<list> (self select(select:"SELECT energy FROM appliances_profiles WHERE id_appliance = "+myself.appliance_id+" AND id_household_profile = "+myself.houseprofile+" ORDER BY time;"));	
+				myself.energyandpower <- list<list> (self select(select:"SELECT energy, power FROM appliances_profiles WHERE id_appliance = "+myself.appliance_id+" AND id_household_profile = "+myself.houseprofile+" AND power != 0 ORDER BY time;"));
+				//myself.power <- list<list> (self select(select:"SELECT power, 0 AS offer FROM appliances_profiles WHERE id_appliance = "+myself.appliance_id+" AND id_household_profile = "+myself.houseprofile+" ORDER BY time;"));
 			}
+			do assign_price;
+    	}
+    	
+    	action assign_price{
+    		int num_rows <- length( (energyandpower[2]) );
+    		//write("houseprofile: " + houseprofile + " num_rows: " + num_rows);
+    		if (num_rows > 0){
+	    		loop i from: 0 to: (num_rows - 1){
+	    			add (float(energyandpower[2][i][0]) * base_price * priority * (rnd(5)/10 + 0.5)) to: powerbid;
+	    		}
+    		}
+    		
     	}
 	}
 
-//Other loads (subspecies of house)
-	species other_loads parent: agentDB {
-		int appliance_size <- 2;
-		int houseprofile;
-		int my_appliance_index <- house(host).num_appliances;
-		float my_appliance_x <- house(host).my_x + (radius_appliance *(cos(my_appliance_index*degree_appliance))); 
-		float my_appliance_y <- house(host).my_y + (radius_appliance *(sin(my_appliance_index*degree_appliance)));
-		file my_icon <- file("../images/Appliance.gif") ;
-		list<list> energy;
-		float current_demand;
-		
-		reflex getdemand{
-			current_demand <- (float (energy[2][time_step][0]));
-			 	
-		 	house(host).demand <- house(host).demand + current_demand;
-		 	totalenergy_nonsmart <- totalenergy_nonsmart + current_demand;
-		 	/*if (current_demand != 0.0)
-		 	{
-		 		write("time: "+time_step+" house_index: "+my_index+" appliance_index: other_loads current_demand: " + current_demand + " demand: " + demand);
-		 	}*/
-		}
-			
-		
-		aspect appliance_icon {
-        	draw my_icon size: appliance_size color:rgb("blue")  at:{my_appliance_x, my_appliance_y, 0};
-        	draw string(current_demand) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
-    	}
-    	
-    	action get_energy_day{
-    		ask agentDB{
-				myself.energy <- list<list> (self select(select:"SELECT SUM(energy) energy, time FROM appliances_profiles WHERE id_household_profile = "+myself.houseprofile+" AND id_appliance NOT IN (SELECT id_appliance FROM appliances WHERE isSmart = 1) GROUP BY time ORDER BY time;"));	
-			}
-    	}	
-	}	
+
+//Smart compressor (subspecies of house)
+	//species smart_compressor parent: agentDB{
+	//	
+	//}
+
 }
 
 //Transformers
@@ -402,6 +429,10 @@ species generator parent: agentDB {
     float my_y <- (grid_height/4);
     file my_icon <- file("../images/PowerPlant.gif") ;
     float demand;
+    int finish <- 0;
+    int max_production <- 150; //150KW
+    int base_production <- 5; //5KW
+    float current_production <- 5.0;
        
 	aspect base {
 		draw sphere(generator_size) color: rgb('red') at: {my_x , my_y , 0 } ;			
@@ -411,12 +442,75 @@ species generator parent: agentDB {
         draw my_icon size: generator_size at: {my_x , my_y, 0 } ;
     }
     
+    //step production function
+    action production_function_step{
+    	float step_value <- 5.0; 
+    	bool increase_step <- false;
+    	bool decrease_step <- false;
+    	float price_factor <- 2.0; //this value is used to mutiply or divide the base_price depending on production increase or decrease
+
+    	if (demand > current_production)
+	    {
+	     	current_production <- current_production + step_value;
+	     	increase_step <- true;
+	    }
+	    else if (demand < ( current_production - step_value ))
+	    {
+	    	current_production <- current_production - step_value;
+	    	decrease_step <- true;
+	    }
+	    
+	    if (increase_step = true)
+	    {
+	    	base_price <- base_price * price_factor;
+	    }
+	    
+	    if (decrease_step = true)
+	    {
+	    	base_price <- base_price / price_factor;
+	    }
+	    
+    }
+    
+    //linear production function
+    action production_function_linear{
+    	
+    }
+    
+    reflex base_price{
+    /*
+     * 1 - Considerar ultima cantidad producida y demandada, si esta muy cerca de los limites, aumentar o disminuir produccion
+     * 2 - Si la prod aumenta el precio base aumenta, si disminuye, disminuye
+     * 3 - ??? si la energia disponible no se ha asignado por completo, bajar el precio y recibir nuevas ofertas
+     */
+     	power_excess <- current_production - demand;
+     	//write("time: " + time + " power_excess: " + power_excess + " current_production: " + current_production + " demand: " + demand );
+		do production_function_step;
+     
+     
+    }
+    
     reflex get_demand{
     	if (debug = 1)
 		{
 			write("generator: " + my_index + " demand: " + demand);
 		}
-    }	
+    }
+    
+    //RECURSIVE CALL
+	/*
+	action get_combinations {
+		write("get_combination - finish: " + finish);
+		finish <- finish + 1;
+		if finish != 3{
+			do get_combinations;
+		}
+	}
+	
+	reflex combinatorial {
+		finish <- 0;
+		do get_combinations;
+	} */	
 }
 
 //Graph
@@ -448,10 +542,10 @@ experiment test type: gui {
                     species generator aspect: icon;
                     species edge_agent aspect: base;
             }
-            display chart_display {
+            /*display smartVsnonsmart_display {
   					chart "Total demand" type: series {
-  						data "smart demand" value: totalenergy_smart color: rgb('red') ;
-  						data "non-smart demand" value: totalenergy_nonsmart color: rgb('blue') ;
+  						data "smart demand" value: totalpower_smart color: rgb('green') ;
+  						data "non-smart demand" value: totalpower_nonsmart color: rgb('blue') ;
 					}
 			}
 		    display house_chart_display {
@@ -474,6 +568,12 @@ experiment test type: gui {
   							data "Powerline" + pl + " demand" value: powerline(pl).demand color: rnd_color(255) ;
   						}
 					}
+    		}*/
+    		display powerexcess_chart_display {
+					chart "Power excess" type: series {
+						data "power excess" value: power_excess color: rgb('red') ;
+					}
     		}
+    		
 	}
 }
