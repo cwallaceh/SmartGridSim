@@ -170,7 +170,11 @@ species house parent: agentDB {
     int my_transformer_index;
     int houseprofile <- rnd(max_household_profile_id - min_household_profile_id) + min_household_profile_id; //598
     int num_appliances;
-    float smart_budget <- rnd(80.0) + 20.0; 
+    float smart_budget <- rnd(1.0) + 0.1; 
+    list<float> appliances_bids_sum;
+    list<float> appliances_energy_sum; 
+    //list<float> appliances_coef;
+    list<int> accepted_appliances_bids;
     
     list<smart_appliance> my_appliances <- [];
     list<list> list_appliances_db;
@@ -234,8 +238,55 @@ species house parent: agentDB {
 		{
 			write("house: " + my_index + " transformer: " + my_transformer_index + " house demand: " + demand);
 		}
+		
+		do combinatorial_auction;
+				
 		transformer(my_transformer_index).demand <- transformer(my_transformer_index).demand + demand;
 	}
+	
+	action combinatorial_auction{
+		loop ap over: (members of_species smart_appliance) {
+  			add sum(ap.energybid) to: appliances_bids_sum;
+  			add sum(ap.energy) to: appliances_energy_sum;
+  			//add sum(ap.energy) / sum(ap.energybid) to: appliances_coef;
+	  	}
+	  	
+	  	if(sum(appliances_bids_sum) <= smart_budget){
+	  		//send bid to transformer
+	  		write("House: " + my_index + " all appliances accepted.");
+	  	}
+	  	else{
+	  		write("House: " + my_index + " used budget: " + knapsack(smart_budget, num_appliances));
+	  		write("House: " + my_index + " appliances accepted: " + accepted_appliances_bids);
+
+	  	}
+	  	
+	}
+	
+	float knapsack(float available_budget, int n){
+		if (n = 0 or available_budget = 0 )
+		{
+			return 0.0;
+		}
+		
+		if (appliances_bids_sum[n-1] > available_budget)
+		{
+			return knapsack(available_budget, n-1);
+		}
+		else
+		{
+			list<float> recursive_options <- [];
+			add (appliances_energy_sum[n-1] + knapsack( (available_budget - appliances_bids_sum[n-1]) , n-1)) to: recursive_options;
+			add (knapsack( available_budget , n-1)) to: recursive_options;
+			if (recursive_options[0] > recursive_options[1] )
+			{
+				add	(n-1) to: accepted_appliances_bids;
+			}
+			return max(recursive_options);
+		}
+		return 0;
+	}
+	
 	
 	init{
 		do get_my_appliances;
@@ -283,9 +334,11 @@ species house parent: agentDB {
 		int appliance_id;
 		int houseprofile;
 		list<list> energyandpower;
-		list<float> powerbid;
+		list<float> energybid;
+		list<float> energy;
 		float current_demand;
 		int priority; //the higher the number the higher the priority
+		bool got_energy <- false;
 		
 	    reflex getdemand{
 	    	
@@ -325,10 +378,10 @@ species house parent: agentDB {
     		//write("houseprofile: " + houseprofile + " num_rows: " + num_rows);
     		if (num_rows > 0){
 	    		loop i from: 0 to: (num_rows - 1){
-	    			add (float(energyandpower[2][i][0]) * base_price * priority * (rnd(5)/10 + 0.5)) to: powerbid;
+	    			add (float(energyandpower[2][i][0]) * base_price * priority * (rnd(5)/10 + 0.5)) to: energybid;
+	    			add (float(energyandpower[2][i][0])) to: energy;
 	    		}
     		}
-    		
     	}
 	}
 
