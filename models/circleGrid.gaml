@@ -103,7 +103,7 @@ global {
 	  	//write general_graph;
 	 }
 	 
-	 reflex restart_power_and_time{
+	reflex restart_power_and_time{
 	 	totalpower_smart <- 0.0;
 	 	totalpower_nonsmart <- 0.0;
 	 	
@@ -158,6 +158,47 @@ species agentDB parent: AgentDB {
 		max_household_profile_id <- int (profileMax[2][0][0]);
 	} 
 	
+	action recursive_combinations (int r, list<int> elements, list<int> combination, int device_id, int type)
+    {
+    	//write("do_recursion  r: " + r + " elements: " + elements + " combination: " + combination );
+    	int length_elements <- length(elements);
+    	
+    	if (r = 1)
+		{
+			loop i from: 0 to: (length_elements - 1)
+			{
+				list<int> new_combination <- [];
+				new_combination <- new_combination + combination;
+				new_combination <- new_combination + elements[i];
+								
+				switch type{
+					match 1 //type transfomer
+					{
+						add new_combination to: transformer(device_id).all_combinations;
+						//write("Transformer: " + device_id + " combination: " + new_combination);		
+					}
+				}
+				
+			}  			
+		}
+    	else{	
+	    	loop i from: 0 to: (length_elements - r)    
+	    	{
+    			list<int> new_combination <- [];
+    			new_combination <- new_combination + combination;
+    			new_combination <- new_combination + elements[i]; 
+    			
+    			list<int> new_elements <- [];
+    			loop j from: i+1 to: (length_elements - 1)
+    			{
+    				add	elements[j] to: new_elements;
+    			} 
+    			
+    			do recursive_combinations( r-1, new_elements, new_combination, device_id, type );
+	    	} 
+    	}
+    }
+	
 	init{
 		do check_db_connection;
 	}
@@ -170,11 +211,13 @@ species house parent: agentDB {
     int my_transformer_index;
     int houseprofile <- rnd(max_household_profile_id - min_household_profile_id) + min_household_profile_id; //598
     int num_appliances;
-    float smart_budget <- rnd(1.0) + 0.1; 
+    float smart_budget <- rnd(1.0) + 0.5; 
     list<float> appliances_bids_sum;
     list<float> appliances_energy_sum; 
-    //list<float> appliances_coef;
-    list<int> accepted_appliances_bids;
+    list<float> appliances_bids_sum_tick <- [];
+    list<float> appliances_energy_sum_tick <- [];
+    list<float> appliances_power_sum_tick <- [];
+    list<int> in_budget_appliances;
     
     list<smart_appliance> my_appliances <- [];
     list<list> list_appliances_db;
@@ -239,28 +282,53 @@ species house parent: agentDB {
 			write("house: " + my_index + " transformer: " + my_transformer_index + " house demand: " + demand);
 		}
 		
-		do combinatorial_auction;
-				
+		//for this step the house only has the sum of other loads demand 
 		transformer(my_transformer_index).demand <- transformer(my_transformer_index).demand + demand;
+		
+		do combinatorial_auction;
 	}
 	
 	action combinatorial_auction{
 		loop ap over: (members of_species smart_appliance) {
   			add sum(ap.energybid) to: appliances_bids_sum;
   			add sum(ap.energy) to: appliances_energy_sum;
-  			//add sum(ap.energy) / sum(ap.energybid) to: appliances_coef;
 	  	}
 	  	
 	  	if(sum(appliances_bids_sum) <= smart_budget){
 	  		//send bid to transformer
 	  		write("House: " + my_index + " all appliances accepted.");
+	  		loop ap over: (members of_species smart_appliance) {
+  				add ap.my_appliance_index to: in_budget_appliances;
+  			}	  		
 	  	}
 	  	else{
-	  		write("House: " + my_index + " used budget: " + knapsack(smart_budget, num_appliances));
-	  		write("House: " + my_index + " appliances accepted: " + accepted_appliances_bids);
-
+	  		write("House: " + my_index + " used budget: " + knapsack(smart_budget, num_appliances ));
+	  		write("House: " + my_index + " appliances accepted: " + in_budget_appliances);
 	  	}
 	  	
+	  	int max_index_container <- -1;
+	  	loop ap over: in_budget_appliances{
+	  		int num_rows <- length( ((members of_species smart_appliance)[ap]).energybid );
+	  		if (num_rows > 0)
+	  		{
+		  		loop i from: 0 to: num_rows - 1 {
+		  			//write("House: " + my_index + " appliance: " + ap + " row: " + i + " max_index_container: " + max_index_container);
+		  			if (max_index_container < i)
+		  			{
+		  				add ((members of_species smart_appliance)[ap]).energybid[i] to: appliances_bids_sum_tick;
+		  				add ((members of_species smart_appliance)[ap]).energy[i] to: appliances_energy_sum_tick;
+		  				add ((members of_species smart_appliance)[ap]).power[i] to: appliances_power_sum_tick;
+		  				max_index_container <- max_index_container + 1; 
+		  			}
+		  			else
+		  			{
+		  				appliances_bids_sum_tick[i] <- appliances_bids_sum_tick[i] + (((members of_species smart_appliance)[ap]).energybid[i]);
+		  				appliances_energy_sum_tick[i] <- appliances_energy_sum_tick[i] + (((members of_species smart_appliance)[ap]).energy[i]);
+		  				appliances_power_sum_tick[i] <- appliances_power_sum_tick[i] + (((members of_species smart_appliance)[ap]).power[i]);
+		  			}
+		  		}
+	  		}
+	  	}
 	}
 	
 	float knapsack(float available_budget, int n){
@@ -280,18 +348,18 @@ species house parent: agentDB {
 			add (knapsack( available_budget , n-1)) to: recursive_options;
 			if (recursive_options[0] > recursive_options[1] )
 			{
-				add	(n-1) to: accepted_appliances_bids;
+				add	(n-1) to: in_budget_appliances;
 			}
 			return max(recursive_options);
 		}
 		return 0;
 	}
 	
-	
 	init{
 		do get_my_appliances;
 		write("house_index: " + my_index + " house_profile: " + houseprofile);
 	}
+	
 //Other loads (subspecies of house)
 	species other_loads parent: agentDB {
 		int appliance_size <- 2;
@@ -336,6 +404,7 @@ species house parent: agentDB {
 		list<list> energyandpower;
 		list<float> energybid;
 		list<float> energy;
+		list<float> power;
 		float current_demand;
 		int priority; //the higher the number the higher the priority
 		bool got_energy <- false;
@@ -380,6 +449,7 @@ species house parent: agentDB {
 	    		loop i from: 0 to: (num_rows - 1){
 	    			add (float(energyandpower[2][i][0]) * base_price * priority * (rnd(5)/10 + 0.5)) to: energybid;
 	    			add (float(energyandpower[2][i][0])) to: energy;
+	    			add (float(energyandpower[2][i][1])) to: power;
 	    		}
     		}
     	}
@@ -401,11 +471,27 @@ species transformer parent: agentDB {
     list<house> my_houses <- [];
     file my_icon <- file("../images/Transformer.gif") ;
     float demand;
+    float power_capacity <- 25.0; //KW
+    list<float> available_power_per_tick;
+    list<float> available_smart_power_per_tick;
+    list<list> combinations_power_sum_tick;
+	list<list> combinations_bids_sum_tick;
+	list<float> combinations_bids_sum;
+	list<list> all_combinations;
+    
+    float max_smart_capacity <- rnd(0.05) + 0.15; //between 15 and 20%
     
     float my_x <- get_coordinate_x(radius_transformer, my_index, degree_transformer);
     float my_y <- get_coordinate_y(radius_transformer, my_index, degree_transformer);
 	
 	float distance <- ceil((radius_house-radius_transformer)/cos(degree_house)) + 1;
+	
+	init{
+		loop i from: 0 to: 1439{
+			add power_capacity to: available_power_per_tick;
+			add power_capacity * max_smart_capacity to: available_smart_power_per_tick; 
+		}
+	}
 	
     aspect base {
 		draw sphere(transformer_size) color: rgb('green') at: {my_x , my_y, 0 } ;
@@ -429,8 +515,125 @@ species transformer parent: agentDB {
 		{
 			write("transformer: " + my_index + " powerline: " + my_powerline_index + " demand: " + demand);
 		}
+		
+		/*
+		 * 1. Obtener suma min por min de las demandas de todas las casas(n)
+		 * 2. Si en algun min se pasa de la potencia max, hacer combinaciones de tama;o (n-1) casas
+		 * 3. Si todas las combinaciones de pasan de la potencia max regresar al paso 2 reduciendo en 1 el num de casas
+		 * 4. Si no todas las combinaciones se pasaron, seleccionar la que maximice mi funcion de utilidad
+		 *  
+		 */
+		
+		
+		do combinatorial_auction;
+		
     	powerline(my_powerline_index).demand <- powerline(my_powerline_index).demand + demand;
     }
+    
+    action combinatorial_auction{
+    	do get_combinations;
+    	do get_combinations_sum;
+    	do remove_exceeded_combinations;
+    	do get_best_combination;
+    }
+    
+	action get_combinations{
+		all_combinations <- [];
+		list<int> combination <- [];
+		list<int> elements <- list<int>(my_houses);
+		write("Transformer: " + my_index + " elements: " + elements);
+		int num_elements <- length(elements);
+		loop i from:1 to: num_elements{
+			do recursive_combinations(i, elements, combination, my_index, 1);	
+		}
+		write("Transformer: " + my_index + " combinations: " + all_combinations);
+	}
+    
+    action get_combinations_sum{
+    	combinations_power_sum_tick <- [];
+    	combinations_bids_sum_tick <- [];
+    	
+		int combination_index <- -1;
+		loop comb over: all_combinations{
+			add [] to: combinations_power_sum_tick;
+			add [] to: combinations_bids_sum_tick;
+			combination_index <- combination_index + 1;
+			
+			int max_index_container <- -1;
+			loop hs over: comb{
+				int num_rows <- length(house(hs).appliances_power_sum_tick);
+		  		if (num_rows > 0)
+		  		{
+			  		loop i from: 0 to: num_rows - 1 {
+			  			//write("Transformer: " + my_index  + " comb: " + comb + " House: " + hs + " row: " + i + " max_index_container: " + max_index_container);
+			  			if (max_index_container < i)
+			  			{
+			  				add house(hs).appliances_power_sum_tick[i] to: combinations_power_sum_tick[combination_index];
+			  				add house(hs).appliances_bids_sum_tick[i] to: combinations_bids_sum_tick[combination_index];
+			  				max_index_container <- max_index_container + 1; 
+			  			}
+			  			else
+			  			{
+			  				combinations_power_sum_tick[combination_index][i] <- float(combinations_power_sum_tick[combination_index][i]) + (house(hs).appliances_power_sum_tick[i]);
+			  				combinations_bids_sum_tick[combination_index][i] <- float(combinations_bids_sum_tick[combination_index][i]) + (house(hs).appliances_bids_sum_tick[i]);
+			  			}
+			  		}
+		  		}
+			}
+		}
+		write("Transformer: " + my_index + " combinations_power_sum_tick: " + combinations_power_sum_tick);
+		write("Transformer: " + my_index + " combinations_bids_sum_tick: " + combinations_bids_sum_tick);
+    }
+    
+    action remove_exceeded_combinations
+    {
+    	list<int> exceeded_combinations <- [];
+    	int length_combinations <- length(all_combinations);
+    	loop comb from: 0 to: length_combinations - 1
+    	{
+    		int length_powerlist <- length(combinations_power_sum_tick[comb]);
+    		if (length_powerlist > 0)
+    		{ 
+    			bool exceeds <- false;
+	    		int i <- 0;
+	    		loop while: (exceeds = false) and (i < length_powerlist)
+	    		{
+	    			if (float(combinations_power_sum_tick[comb][i]) > available_smart_power_per_tick[time_step + i])
+	    			{
+	    				exceeds <- true;
+	    				add comb to: exceeded_combinations;
+	    			}
+	    			i <- i + 1;
+	    		}
+	    		if (exceeds = true) //erases power list and bid list
+	    		{
+	    			combinations_power_sum_tick[comb] <- [];
+	    			combinations_bids_sum_tick[comb]<- [];
+	    		}
+	    	}
+    	}
+    	
+    	write("Transformer: " + my_index + " exceeded combinations: " + exceeded_combinations);
+    	write("Transformer: " + my_index + " in competence combinations: " + combinations_power_sum_tick);
+    }
+    
+    action get_best_combination
+    {
+    	int length_bidlist <- length(combinations_bids_sum_tick);
+    	loop comb from: 0 to: length_bidlist-1
+    	{
+    		add sum(list<float>(combinations_bids_sum_tick[comb])) to: combinations_bids_sum;
+    	}
+    	
+    	write("Transformer: " + my_index + " combinations_bids_sum: " + combinations_bids_sum);
+    	float better_combination <- max(combinations_bids_sum);
+    	int better_combination_index <- combinations_bids_sum index_of better_combination;
+    	
+    	write("Transformer: " + my_index + " better_combination_index: " + better_combination_index + " better_combination: " + better_combination );
+    	
+    	
+    }
+     
 }
 
 //Power lines
@@ -548,22 +751,7 @@ species generator parent: agentDB {
 		{
 			write("generator: " + my_index + " demand: " + demand);
 		}
-    }
-    
-    //RECURSIVE CALL
-	/*
-	action get_combinations {
-		write("get_combination - finish: " + finish);
-		finish <- finish + 1;
-		if finish != 3{
-			do get_combinations;
-		}
-	}
-	
-	reflex combinatorial {
-		finish <- 0;
-		do get_combinations;
-	} */	
+    }	
 }
 
 //Graph
