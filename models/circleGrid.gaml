@@ -177,6 +177,11 @@ species agentDB parent: AgentDB {
 						add new_combination to: transformer(device_id).all_combinations;
 						//write("Transformer: " + device_id + " combination: " + new_combination);		
 					}
+					match 2 //type powerline
+					{
+						add new_combination to: powerline(device_id).all_combinations;
+						//write("Powerline: " + device_id + " combination: " + new_combination);		
+					}
 				}
 				
 			}  			
@@ -472,13 +477,13 @@ species transformer parent: agentDB {
     file my_icon <- file("../images/Transformer.gif") ;
     float demand;
     float power_capacity <- 25.0; //KW
-    list<float> available_power_per_tick;
+    list<float> available_nonsmart_power_per_tick;
     list<float> available_smart_power_per_tick;
     list<list> combinations_power_sum_tick;
 	list<list> combinations_bids_sum_tick;
 	list<float> combinations_bids_sum;
 	list<list> all_combinations;
-    
+    int better_combination_index;
     float max_smart_capacity <- rnd(0.05) + 0.15; //between 15 and 20%
     
     float my_x <- get_coordinate_x(radius_transformer, my_index, degree_transformer);
@@ -488,8 +493,9 @@ species transformer parent: agentDB {
 	
 	init{
 		loop i from: 0 to: 1439{
-			add power_capacity to: available_power_per_tick;
-			add power_capacity * max_smart_capacity to: available_smart_power_per_tick; 
+			float smart_capacity <- power_capacity * max_smart_capacity;
+			add power_capacity - smart_capacity to: available_nonsmart_power_per_tick;
+			add smart_capacity to: available_smart_power_per_tick; 
 		}
 	}
 	
@@ -515,15 +521,6 @@ species transformer parent: agentDB {
 		{
 			write("transformer: " + my_index + " powerline: " + my_powerline_index + " demand: " + demand);
 		}
-		
-		/*
-		 * 1. Obtener suma min por min de las demandas de todas las casas(n)
-		 * 2. Si en algun min se pasa de la potencia max, hacer combinaciones de tama;o (n-1) casas
-		 * 3. Si todas las combinaciones de pasan de la potencia max regresar al paso 2 reduciendo en 1 el num de casas
-		 * 4. Si no todas las combinaciones se pasaron, seleccionar la que maximice mi funcion de utilidad
-		 *  
-		 */
-		
 		
 		do combinatorial_auction;
 		
@@ -619,6 +616,7 @@ species transformer parent: agentDB {
     
     action get_best_combination
     {
+    	combinations_bids_sum <- [];
     	int length_bidlist <- length(combinations_bids_sum_tick);
     	loop comb from: 0 to: length_bidlist-1
     	{
@@ -627,11 +625,9 @@ species transformer parent: agentDB {
     	
     	write("Transformer: " + my_index + " combinations_bids_sum: " + combinations_bids_sum);
     	float better_combination <- max(combinations_bids_sum);
-    	int better_combination_index <- combinations_bids_sum index_of better_combination;
+    	better_combination_index <- combinations_bids_sum last_index_of better_combination;
     	
     	write("Transformer: " + my_index + " better_combination_index: " + better_combination_index + " better_combination: " + better_combination );
-    	
-    	
     }
      
 }
@@ -644,11 +640,28 @@ species powerline parent: agentDB {
 	list<transformer> my_transformers <- [];
     file my_icon <- file("../images/PowerLines.gif") ;
     float demand;
+    float power_capacity <- 75.0; //KW
+    list<float> available_nonsmart_power_per_tick;
+    list<float> available_smart_power_per_tick;
+    list<list> combinations_power_sum_tick;
+	list<list> combinations_bids_sum_tick;
+	list<float> combinations_bids_sum;
+	list<list> all_combinations;
+	int better_combination_index;
+    float max_smart_capacity <- rnd(0.05) + 0.15; //between 15 and 20%
     
     float my_x <- get_coordinate_x(radius_lines, my_index, degree_lines);
     float my_y <- get_coordinate_y(radius_lines, my_index, degree_lines);
     
     float distance <- ceil((radius_transformer-radius_lines)/cos(degree_transformer)) + 1;
+    
+    init{
+		loop i from: 0 to: 1439{
+			float smart_capacity <- power_capacity * max_smart_capacity;
+			add power_capacity - smart_capacity to: available_nonsmart_power_per_tick;
+			add smart_capacity to: available_smart_power_per_tick; 
+		}
+	}
     
     aspect base {
 		draw sphere(lines_size) color: rgb('yellow') at: {my_x , my_y, 0 } ;
@@ -672,7 +685,118 @@ species powerline parent: agentDB {
 		{
 			write("powerline: " + my_index + " generator: " + my_generator_index + " demand: " + demand);
 		}
+		
+		do combinatorial_auction;
+		
     	generator(my_generator_index).demand <- generator(my_generator_index).demand + demand;
+    }
+    
+    action combinatorial_auction{
+    	do get_combinations;
+    	do get_combinations_sum;
+    	do remove_exceeded_combinations;
+    	do get_best_combination;
+    }
+    
+	action get_combinations{
+		all_combinations <- [];
+		list<int> combination <- [];
+		list<int> elements <- list<int>(my_transformers);
+		write("Powerline: " + my_index + " elements: " + elements);
+		int num_elements <- length(elements);
+		loop i from:1 to: num_elements{
+			do recursive_combinations(i, elements, combination, my_index, 2);	
+		}
+		write("Powerline: " + my_index + " combinations: " + all_combinations);
+	}
+    
+    action get_combinations_sum{
+    	combinations_power_sum_tick <- [];
+    	combinations_bids_sum_tick <- [];
+    	
+		int combination_index <- -1;
+		loop comb over: all_combinations{
+			add [] to: combinations_power_sum_tick;
+			add [] to: combinations_bids_sum_tick;
+			combination_index <- combination_index + 1;
+			
+			int max_index_container <- -1;
+			loop tr over: comb{
+				int transf_better_combination_index <- transformer(tr).better_combination_index;
+				int num_rows <- length(transformer(tr).combinations_power_sum_tick[transf_better_combination_index]);
+				//write("Transformer: " + tr + " transf_better_combination_index: " + transf_better_combination_index);
+				//write("Transformer: " + tr + " elem better comb: " + transformer(tr).combinations_power_sum_tick[transf_better_combination_index]);
+		  		
+		  		if (num_rows > 0)
+		  		{
+		  			loop i from: 0 to: num_rows - 1 {
+			  			//write("Powerline: " + my_index  + " comb: " + comb + " Transformer: " + tr + " row: " + i + " max_index_container: " + max_index_container);
+			  			if (max_index_container < i)
+			  			{
+			  				//write("Powerline: " + my_index  + " comb: " + comb + " Transformer: " + tr + " row: " + i + " "+ transformer(tr).combinations_power_sum_tick[transf_better_combination_index][i]);
+			  				add transformer(tr).combinations_power_sum_tick[transf_better_combination_index][i] to: combinations_power_sum_tick[combination_index];
+			  				add transformer(tr).combinations_bids_sum_tick[transf_better_combination_index][i] to: combinations_bids_sum_tick[combination_index];
+			  				max_index_container <- max_index_container + 1; 
+			  			}
+			  			else
+			  			{
+			  				combinations_power_sum_tick[combination_index][i] <- float(combinations_power_sum_tick[combination_index][i]) + float(transformer(tr).combinations_power_sum_tick[transf_better_combination_index][i]);
+			  				combinations_bids_sum_tick[combination_index][i] <- float(combinations_bids_sum_tick[combination_index][i]) + float(transformer(tr).combinations_bids_sum_tick[transf_better_combination_index][i]);
+			  			}
+			  		}
+		  		}
+			}
+		}
+		write("Powerline: " + my_index + " combinations_power_sum_tick: " + combinations_power_sum_tick);
+		write("Powerline: " + my_index + " combinations_bids_sum_tick: " + combinations_bids_sum_tick);
+    }
+    
+    action remove_exceeded_combinations
+    {
+    	list<int> exceeded_combinations <- [];
+    	int length_combinations <- length(all_combinations);
+    	loop comb from: 0 to: length_combinations - 1
+    	{
+    		int length_powerlist <- length(combinations_power_sum_tick[comb]);
+    		if (length_powerlist > 0)
+    		{ 
+    			bool exceeds <- false;
+	    		int i <- 0;
+	    		loop while: (exceeds = false) and (i < length_powerlist)
+	    		{
+	    			if (float(combinations_power_sum_tick[comb][i]) > available_smart_power_per_tick[time_step + i])
+	    			{
+	    				exceeds <- true;
+	    				add comb to: exceeded_combinations;
+	    			}
+	    			i <- i + 1;
+	    		}
+	    		if (exceeds = true) //erases power list and bid list
+	    		{
+	    			combinations_power_sum_tick[comb] <- [];
+	    			combinations_bids_sum_tick[comb]<- [];
+	    		}
+	    	}
+    	}
+    	
+    	write("Powerline: " + my_index + " exceeded combinations: " + exceeded_combinations);
+    	write("Powerline: " + my_index + " in competence combinations: " + combinations_power_sum_tick);
+    }
+    
+    action get_best_combination
+    {
+    	combinations_bids_sum <- [];
+    	int length_bidlist <- length(combinations_bids_sum_tick);
+    	loop comb from: 0 to: length_bidlist-1
+    	{
+    		add sum(list<float>(combinations_bids_sum_tick[comb])) to: combinations_bids_sum;
+    	}
+    	
+    	write("Powerline: " + my_index + " combinations_bids_sum: " + combinations_bids_sum);
+    	float better_combination <- max(combinations_bids_sum);
+    	better_combination_index <- combinations_bids_sum last_index_of better_combination;
+    	
+    	write("Powerline: " + my_index + " better_combination_index: " + better_combination_index + " better_combination: " + better_combination );
     }
 }
 
@@ -742,8 +866,6 @@ species generator parent: agentDB {
      	power_excess <- current_production - demand;
      	//write("time: " + time + " power_excess: " + power_excess + " current_production: " + current_production + " demand: " + demand );
 		do production_function_step;
-     
-     
     }
     
     reflex get_demand{
