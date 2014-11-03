@@ -34,3 +34,14 @@ Icon
 # Files that might appear on external disk
 .Spotlight-V100
 .Trashes
+
+.metadata/.log
+.metadata/.plugins/org.eclipse.xtext.ui.codetemplates.ui/dialog_settings.xml
+.metadata/.plugins/org.eclipse.xtext.builder/builder.state
+.metadata/.plugins/org.eclipse.ui.workbench/workbench.xml
+.metadata/.plugins/org.eclipse.ui.workbench/dialog_settings.xml
+.metadata/.plugins/org.eclipse.core.runtime/.settings/org.eclipse.ui.workbench.prefs
+.metadata/.plugins/org.eclipse.core.runtime/.settings/org.eclipse.team.svn.core.prefs
+.metadata/.plugins/org.eclipse.core.resources/.root/.indexes/properties.version
+.metadata/.plugins/org.eclipse.core.resources/.root/.indexes/properties.index
+.metadata/.plugins/msi.gama.lang.gaml.ui/dialog_settings.xml
