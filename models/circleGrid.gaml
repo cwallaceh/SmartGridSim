@@ -415,6 +415,7 @@ species house parent: agentDB {
     	}
     	
     	//reassign priorities to pending appliances
+    	/*
     	int num_pending_smart_appliances <- length(pending_smart_appliances);
     	if (num_pending_smart_appliances > 0)
     	{
@@ -429,7 +430,7 @@ species house parent: agentDB {
     			remove new_priority_to_assign from: priorities;
     			smart_appliance(ap).priority <- new_priority_to_assign;
     		}
-    	}
+    	} */
     }
 	
 	reflex remove_appliances_non_enough_time{
