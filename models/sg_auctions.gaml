@@ -4,6 +4,7 @@
  *			Carl W. Handlin
  *  Description:
  * 	Icons made by Freepik from www.flaticon.com is licensed under CC BY 3.0
+ *	https://creativecommons.org/licenses/by/3.0/
  */
 
 model sg_auctions
@@ -45,6 +46,8 @@ global {
     
     float base_price <- 1.00; //per kwh
     float power_excess <- 0.00;
+    
+    //file results_file <- file("../results/results.csv");
     
     // MySQL connection parameter
 	map<string, string>  MySQL <- [
@@ -109,7 +112,7 @@ global {
 	 }
 	 
 	reflex restart_power_and_time{
-	 	write ("totalenergy_smart: " + totalenergy_smart);
+	 	//write ("totalenergy_smart: " + totalenergy_smart);
 	 	totalenergy_smart <- 0.0;
 	 	totalenergy_nonsmart <- 0.0;
 	 	
@@ -126,7 +129,8 @@ global {
 	 	}
 	 	if(time_step = 1439)
 	 	{
-	 		time_step <- 0;
+	 		do halt;
+	 		//time_step <- 0;
 	 	}
 	 	else
 	 	{
@@ -252,6 +256,7 @@ species house parent: agentDB {
     float better_combination_bid;
     float total_bid <- 0.0;
     float total_power;
+    bool no_pending_appliances <- false;
     
     list<int> my_smart_appliances <- [];
     list<list> list_appliances_db;
@@ -324,7 +329,7 @@ species house parent: agentDB {
 		transformer(my_transformer_index).demand <- transformer(my_transformer_index).demand + demand;
 		
 		do combinatorial_auction;
-		do remove_appliances_non_enough_time;
+		//do remove_appliances_not_enough_time;
 	}
 	
 	
@@ -339,7 +344,11 @@ species house parent: agentDB {
 	action get_combinations{
 		all_combinations <- [];
 		list<int> combination <- [];
-		list<int> elements <- pending_smart_appliances;
+		list<int> elements <- [];
+		if (no_pending_appliances = false)
+    	{ 
+    		list<int> elements <- pending_smart_appliances;
+		}
 		int num_elements <- length(elements);
 		if (num_elements > 0){
 			loop i from:1 to: num_elements{
@@ -351,9 +360,13 @@ species house parent: agentDB {
 				write("House: " + my_index + " combinations: " + all_combinations);
 			}
 		}
-		else //if (debug_house = 1)
+		else 
 		{
-			write("House: " + my_index + " no more pending appliances" + " remaining smart_budget: " + smart_budget);
+			no_pending_appliances <- true;
+			if (debug_house = 1)
+			{
+				write("House: " + my_index + " no more pending appliances" + " remaining smart_budget: " + smart_budget);
+			}
 		}
 	}
     
@@ -599,10 +612,16 @@ species house parent: agentDB {
     		smart_appliance(ap).got_energy <- true;
     	}*/
     	
-    	loop ap over: all_combinations[better_combination_index]
+    	if (no_pending_appliances = false)
     	{
-    		remove ap from: pending_smart_appliances;
-    		smart_appliance(ap).got_energy <- true;
+	    	loop ap over: all_combinations[better_combination_index]
+	    	{
+	    		if (ap in pending_smart_appliances)
+	    		{
+		    		remove ap from: pending_smart_appliances;
+		    		smart_appliance(ap).got_energy <- true;
+	    		}
+	    	}
     	}
     	
     	//reassign priorities to pending appliances
@@ -624,9 +643,9 @@ species house parent: agentDB {
     	} */
     }
 	
-	action remove_appliances_non_enough_time{
+	action remove_appliances_not_enough_time{
 		loop ap over: pending_smart_appliances{
-			if (smart_appliance(ap).enough_time = false)
+			if (smart_appliance(ap).enough_time = false and ap in pending_smart_appliances)
 			{
 				remove ap from: pending_smart_appliances;
 			} 
@@ -651,13 +670,24 @@ species house parent: agentDB {
 		file my_icon <- file("../images/Appliance.gif") ;
 		list<list> energy;
 		float current_demand;
+		float current_power;
 		
 		reflex getdemand{
 			current_demand <- (float (energy[2][time_step][0]));
+			current_power <- (float (energy[2][time_step][1]));
 			
 			house(host).demand <- 0.0;
 		 	house(host).demand <- house(host).demand + current_demand;
 		 	totalenergy_nonsmart <- totalenergy_nonsmart + current_demand;
+		 	
+		 	int transfomer_index <- house(host).my_transformer_index;
+			int powerline_index <- transformer(transfomer_index).my_powerline_index;
+		 	write("" + time_step + ";NONSMARTPOWER;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" +current_power);
+			write("" + time_step + ";NONSMARTMONEY;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" + (current_power > 0 ? base_price : 0.0));
+			
+			//add "NONSMARTPOWER;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" +current_power to: results_file;
+			//save ["asdsd", "ddsf"] type: "csv" to: "results.csv" ;
+			//["NONSMARTPOWER", ("Powerline" + powerline_index), ("Transformer" + transfomer_index), ("House" + my_index), ("NonSmartAppliance" + my_appliance_index), current_power];
 		}
 			
 		aspect appliance_icon {
@@ -667,7 +697,7 @@ species house parent: agentDB {
     	
     	action get_power_day{
     		ask agentDB{
-				myself.energy <- list<list> (self select(select:"SELECT SUM(energy) energy, time FROM appliances_profiles WHERE id_household_profile = "+myself.houseprofile+" AND id_appliance NOT IN (SELECT id_appliance FROM appliances WHERE isSmart = 1) GROUP BY time ORDER BY time;"));	
+				myself.energy <- list<list> (self select(select:"SELECT SUM(energy) energy, power, time FROM appliances_profiles WHERE id_household_profile = "+myself.houseprofile+" AND id_appliance NOT IN (SELECT id_appliance FROM appliances WHERE isSmart = 1) GROUP BY time ORDER BY time;"));	
 			}
     	}	
 	}	
@@ -704,12 +734,11 @@ species house parent: agentDB {
 			 	house(host).demand <- house(host).demand + current_demand;
 			 	totalenergy_smart <- totalenergy_smart + current_demand;
 			 	
+			 	int transfomer_index <- house(host).my_transformer_index;
+			 	int powerline_index <- transformer(transfomer_index).my_powerline_index;
+			 	write("" + time_step + ";SMARTPOWER;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";SmartAppliance" + my_appliance_index + ";" +power[energy_index]);
+			 	write("" + time_step + ";SMARTBID;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";SmartAppliance" + my_appliance_index + ";" +energybid[energy_index]);
 			 	energy_index <- energy_index + 1;
-			 	
-			 	/*if (current_demand != 0.0)
-			 	{
-			 		write("time: "+time_step+" house_index: "+my_index+" appliance_index: "+my_appliance_index+" current_demand: " + current_demand + " demand: " + demand);
-			 	}*/
 	    	}
 	    	
 	    	else if ( got_energy = false ) {
@@ -736,17 +765,14 @@ species house parent: agentDB {
     	action get_power_day{
     		ask agentDB{
 				myself.energyandpower <- list<list> (self select(select:"SELECT energy, power FROM appliances_profiles WHERE id_appliance = "+myself.appliance_id+" AND id_household_profile = "+myself.houseprofile+" AND power != 0 ORDER BY time;"));
-				//myself.power <- list<list> (self select(select:"SELECT power, 0 AS offer FROM appliances_profiles WHERE id_appliance = "+myself.appliance_id+" AND id_household_profile = "+myself.houseprofile+" ORDER BY time;"));
 			}
 			do get_energy_power_bid;
     	}
     	
     	action get_energy_power_bid{
     		int num_rows <- length( (energyandpower[2]) );
-    		//write("houseprofile: " + houseprofile + " num_rows: " + num_rows);
     		if (num_rows > 0){
 	    		loop i from: 0 to: (num_rows - 1){
-	    			//add (float(energyandpower[2][i][0]) * base_price * priority * (rnd(5)/10 + 0.5)) to: energybid;
 	    			add (float(energyandpower[2][i][0])) to: energy;
 	    			add (float(energyandpower[2][i][1])) to: power;
 	    		}
@@ -1306,12 +1332,24 @@ species generator parent: agentDB {
 	     	increase_step <- true;
 	     	do recalculate_available_power;
 	    }
-	    else if (demand < ( current_production - step_value ))// - soldpower[time_step+1])) //menos lo que vendi para el tick siguiente
-	    {
-	    	current_production <- current_production - step_value;
-	    	decrease_step <- true;
-	    	do recalculate_available_power;
+	    else{
+	    	float var <- 0.0;
+	    	if (time_step < 1439)
+	    	{
+	    		 var <- current_production - step_value - sold_smart_power_per_tick[time_step+1] ; //considers next tick's sold power 
+	    	}
+	    	else
+	    	{
+	    		var <- current_production - step_value;
+	    	}
+	    	if (demand < var)
+		    {
+		    	current_production <- current_production - step_value;
+		    	decrease_step <- true;
+		    	do recalculate_available_power;
+		    }	
 	    }
+	    
 	    
 	    if (increase_step = true)
 	    {
