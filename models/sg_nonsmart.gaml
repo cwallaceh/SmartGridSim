@@ -38,6 +38,15 @@ global {
     int min_household_profile_id;
     int max_household_profile_id;
     
+    float base_price <- 1.00; //per kwh
+    float power_excess <- 0.00;
+    
+    float transformer_power_capacity <- 25.0; //KW
+    float powerline_power_capacity <- 75.0; //KW
+    float generator_max_production <- 225.0; //225KW
+    float generator_base_production <- 5.0; //5KW
+    float generator_current_production <- 50.0; //20KW
+    
     // MySQL connection parameter
 	map<string, string>  MySQL <- [
     'host'::'localhost',
@@ -117,7 +126,8 @@ global {
 	 	}
 	 	if(time_step = 1439)
 	 	{
-	 		time_step <- 0;
+	 		//time_step <- 0;
+	 		do halt;
 	 	}
 	 	else
 	 	{
@@ -137,10 +147,13 @@ species agentDB parent: AgentDB {
 	}
 	
 	action check_db_connection{
-    	if (self testConnection(params:MySQL)){
-        	write "Connection is OK" ;
-		}else{
-        	write "Connection is false" ;
+		if (debug = 1)
+		{
+	    	if (self testConnection(params:MySQL)){
+	        	write "Connection is OK" ;
+			}else{
+	        	write "Connection is false" ;
+			}
 		}
     }
 	
@@ -224,7 +237,10 @@ species house parent: agentDB {
 	
 	init{
 		do get_my_appliances;
-		write("house_index: " + my_index + " house_profile: " + houseprofile);
+		if (debug = 1)
+		{
+			write("house_index: " + my_index + " house_profile: " + houseprofile);	
+		}
 	}
 	
 //Smart Appliances  (subspecies of house)
@@ -239,26 +255,22 @@ species house parent: agentDB {
 		int houseprofile;
 		list<list> energy;
 		float current_demand;
+		float current_power;
 		
-		//int policy <- rnd(3) + 1;
-		//int type <- rnd_choice(["Refrigerator", "Washermachine", "Dishwasher"]); 
-		//int demand_pattern <- 1; //todo: list per slot of time the amount of power it will consume
-		
-		//reflex consume when: energy > 0 {
-	    //}
-	    
 	    reflex getdemand{
 			//write ("house_index: "+my_index+" appliance_index: "+my_appliance_index+" demand: " + energy[2][time_step][0]);
-		 	current_demand <- (float (energy[2][time_step][0]));
-		 	
+		 	current_demand <- (float (energy[2][time_step][1])); // it used to be energy, now it is also power
+		 	current_power <- (float (energy[2][time_step][1]));
+	 		
 	 		house(host).demand <- 0.0;
 	 	
 		 	house(host).demand <- house(host).demand + current_demand;
 		 	totalenergy_smart <- totalenergy_smart + current_demand;
-		 	/*if (current_demand != 0.0)
-		 	{
-		 		write("time: "+time_step+" house_index: "+my_index+" appliance_index: "+my_appliance_index+" current_demand: " + current_demand + " demand: " + demand);
-		 	}*/
+		 	
+		 	int transfomer_index <- house(host).my_transformer_index;
+			int powerline_index <- transformer(transfomer_index).my_powerline_index;
+		 	write("" + time_step + ";SMARTPOWER;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" +current_power);
+			write("" + time_step + ";SMARTMONEY;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" + (current_power > 0 ? base_price : 0.0));
 		}
 		
 		aspect appliance_base {
@@ -272,7 +284,7 @@ species house parent: agentDB {
     	
     	action get_energy_day{
     		ask agentDB{
-				myself.energy <- list<list> (self select(select:"SELECT energy FROM appliances_profiles WHERE id_appliance = "+myself.appliance_id+" AND id_household_profile = "+myself.houseprofile+" ORDER BY time;"));	
+				myself.energy <- list<list> (self select(select:"SELECT energy, power FROM appliances_profiles WHERE id_appliance = "+myself.appliance_id+" AND id_household_profile = "+myself.houseprofile+" ORDER BY time;"));	
 			}
     	}
 	}
@@ -287,19 +299,21 @@ species house parent: agentDB {
 		file my_icon <- file("../images/Appliance.gif") ;
 		list<list> energy;
 		float current_demand;
+		float current_power;
 		
 		reflex getdemand{
-			current_demand <- (float (energy[2][time_step][0]));
+			current_demand <- (float (energy[2][time_step][1])); // it used to be energy, now it is also power
+			current_power <- (float (energy[2][time_step][1]));
 			 	
 		 	house(host).demand <- house(host).demand + current_demand;
 		 	totalenergy_nonsmart <- totalenergy_nonsmart + current_demand;
-		 	/*if (current_demand != 0.0)
-		 	{
-		 		write("time: "+time_step+" house_index: "+my_index+" appliance_index: other_loads current_demand: " + current_demand + " demand: " + demand);
-		 	}*/
+		 	
+		 	int transfomer_index <- house(host).my_transformer_index;
+			int powerline_index <- transformer(transfomer_index).my_powerline_index;
+		 	write("" + time_step + ";NONSMARTPOWER;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" +current_power);
+			write("" + time_step + ";NONSMARTMONEY;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" + (current_power > 0 ? base_price : 0.0));
 		}
 			
-		
 		aspect appliance_icon {
         	draw my_icon size: appliance_size color:rgb("blue")  at:{my_appliance_x, my_appliance_y, 0};
         	draw string(current_demand) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
@@ -307,7 +321,7 @@ species house parent: agentDB {
     	
     	action get_energy_day{
     		ask agentDB{
-				myself.energy <- list<list> (self select(select:"SELECT SUM(energy) energy, time FROM appliances_profiles WHERE id_household_profile = "+myself.houseprofile+" AND id_appliance NOT IN (SELECT id_appliance FROM appliances WHERE isSmart = 1) GROUP BY time ORDER BY time;"));	
+				myself.energy <- list<list> (self select(select:"SELECT SUM(energy) energy, SUM(power) power, time FROM appliances_profiles WHERE id_household_profile = "+myself.houseprofile+" AND id_appliance NOT IN (SELECT id_appliance FROM appliances WHERE isSmart = 1) GROUP BY time ORDER BY time;"));	
 			}
     	}	
 	}	
@@ -350,6 +364,8 @@ species transformer parent: agentDB {
 			write("transformer: " + my_index + " powerline: " + my_powerline_index + " demand: " + demand);
 		}
     	powerline(my_powerline_index).demand <- powerline(my_powerline_index).demand + demand;
+    	
+    	write("" + time_step + ";Transformer" + my_index + ";exceed_flag;" + (demand - transformer_power_capacity ) );    	
     }
 }
 
@@ -389,7 +405,9 @@ species powerline parent: agentDB {
 		{
 			write("powerline: " + my_index + " generator: " + my_generator_index + " demand: " + demand);
 		}
+    	
     	generator(my_generator_index).demand <- generator(my_generator_index).demand + demand;
+    	write("" + time_step + ";Powerline" + my_index + ";exceed_flag;" + ( demand - powerline_power_capacity) );
     }
 }
 
@@ -411,12 +429,56 @@ species generator parent: agentDB {
         draw my_icon size: generator_size at: {my_x , my_y, 0 } ;
     }
     
+    //step production function
+    action production_function_step{
+    	float step_value <- 5.0; 
+    	bool increase_step <- false;
+    	bool decrease_step <- false;
+    	float price_factor <- 2.0; //this value is used to mutiply or divide the base_price depending on production increase or decrease
+
+    	if (demand > generator_current_production)
+	    {
+	    	if (generator_current_production + step_value <= generator_max_production)
+	    	{
+	    		generator_current_production <- generator_current_production + step_value;
+		     	increase_step <- true;
+	    	}
+	    }
+	    else{
+	    	if (demand < (generator_current_production - step_value))
+		    {
+		    	generator_current_production <- generator_current_production - step_value;
+		    	decrease_step <- true;
+		    }	
+	    }
+	    
+	    if (increase_step = true)
+	    {
+	    	base_price <- base_price * price_factor;
+	    }
+	    
+	    if (decrease_step = true)
+	    {
+	    	base_price <- base_price / price_factor;
+	    }
+	    
+    }
+    
     reflex get_demand{
     	if (debug = 1)
 		{
 			write("generator: " + my_index + " demand: " + demand);
 		}
-    }	
+		write("" + time_step + ";base_price;" + base_price);
+		write("" + time_step + ";power_excess;" + power_excess);
+		
+    }
+    
+    reflex base_price{
+     	power_excess <- generator_current_production - demand;
+		do production_function_step;
+    }
+    
 }
 
 //Graph
@@ -452,8 +514,10 @@ experiment test type: gui {
   					chart "Total demand" type: series {
   						data "smart demand" value: totalenergy_smart color: rgb('red') ;
   						data "non-smart demand" value: totalenergy_nonsmart color: rgb('blue') ;
+  						data "total demand" value: (totalenergy_smart + totalenergy_nonsmart) color: rgb('purple') ;
 					}
 			}
+			/*
 		    display house_chart_display {
 					chart "House demand" type: series {
 						loop hs over: house {
@@ -475,5 +539,6 @@ experiment test type: gui {
   						}
 					}
     		}
+    		*/
 	}
 }
