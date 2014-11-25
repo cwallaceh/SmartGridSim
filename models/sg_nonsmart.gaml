@@ -12,6 +12,7 @@ model sg_nonsmart
 
 global {
 	int debug <- 0;
+	int print_results <- 0;
 	
 	graph general_graph;
 	float totalenergy_smart <- 0.0;
@@ -40,12 +41,14 @@ global {
     
     float base_price <- 1.00; //per kwh
     float power_excess <- 0.00;
+    float generator_step_value <- 10.0;
+    float price_factor <- 1.01; //this value is used to mutiply or divide the base_price depending on production increase or decrease
     
-    float transformer_power_capacity <- 25.0; //KW
-    float powerline_power_capacity <- 75.0; //KW
-    float generator_max_production <- 225.0; //225KW
-    float generator_base_production <- 5.0; //5KW
-    float generator_current_production <- 50.0; //20KW
+    float transformer_power_capacity <- 20.0; //KW
+    float powerline_power_capacity <- 60.0; //KW
+    float generator_max_production <- 180.0; //KW
+    float generator_base_production <- 5.0; //KW
+    float generator_current_production <- 40.0; //KW
     
     // MySQL connection parameter
 	map<string, string>  MySQL <- [
@@ -178,7 +181,7 @@ species house parent: agentDB {
     int house_size <- 4;
     int my_index <- house index_of self;
     int my_transformer_index;
-    int houseprofile <- rnd(max_household_profile_id - min_household_profile_id) + min_household_profile_id; //598
+    int houseprofile <- my_index + 1; // rnd(max_household_profile_id - min_household_profile_id) + min_household_profile_id; //598
     int num_appliances;
     
     list<smart_appliance> my_appliances <- [];
@@ -197,7 +200,7 @@ species house parent: agentDB {
 	
 	aspect icon {
         draw my_icon size: house_size at: {my_x , my_y, 0 } ;
-        draw string(demand) size: 3 color: rgb("black") at: {my_x , my_y, 0 };
+        //draw string(demand) size: 3 color: rgb("black") at: {my_x , my_y, 0 };
     }
 	
 	action get_my_appliances{
@@ -267,10 +270,13 @@ species house parent: agentDB {
 		 	house(host).demand <- house(host).demand + current_demand;
 		 	totalenergy_smart <- totalenergy_smart + current_demand;
 		 	
-		 	int transfomer_index <- house(host).my_transformer_index;
-			int powerline_index <- transformer(transfomer_index).my_powerline_index;
-		 	write("" + time_step + ";SMARTPOWER;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" +current_power);
-			write("" + time_step + ";SMARTMONEY;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" + (current_power > 0 ? base_price : 0.0));
+		 	if(print_results = 1)
+		 	{
+			 	int transfomer_index <- house(host).my_transformer_index;
+				int powerline_index <- transformer(transfomer_index).my_powerline_index;
+			 	write("" + time_step + ";SMARTPOWER;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" +current_power);
+				write("" + time_step + ";SMARTMONEY;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" + (current_power > 0 ? base_price : 0.0));
+			}
 		}
 		
 		aspect appliance_base {
@@ -279,7 +285,7 @@ species house parent: agentDB {
 		
 		aspect appliance_icon {
         	draw my_icon size: appliance_size at:{my_appliance_x, my_appliance_y, 0};
-        	draw string(current_demand) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
+        	//draw string(current_demand) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
     	}
     	
     	action get_energy_day{
@@ -308,15 +314,18 @@ species house parent: agentDB {
 		 	house(host).demand <- house(host).demand + current_demand;
 		 	totalenergy_nonsmart <- totalenergy_nonsmart + current_demand;
 		 	
-		 	int transfomer_index <- house(host).my_transformer_index;
-			int powerline_index <- transformer(transfomer_index).my_powerline_index;
-		 	write("" + time_step + ";NONSMARTPOWER;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" +current_power);
-			write("" + time_step + ";NONSMARTMONEY;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" + (current_power > 0 ? base_price : 0.0));
+		 	if(print_results = 1)
+		 	{
+			 	int transfomer_index <- house(host).my_transformer_index;
+				int powerline_index <- transformer(transfomer_index).my_powerline_index;
+			 	write("" + time_step + ";NONSMARTPOWER;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" +current_power);
+				write("" + time_step + ";NONSMARTMONEY;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" + (current_power > 0 ? base_price : 0.0));
+			}
 		}
 			
 		aspect appliance_icon {
         	draw my_icon size: appliance_size color:rgb("blue")  at:{my_appliance_x, my_appliance_y, 0};
-        	draw string(current_demand) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
+        	//draw string(current_demand) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
     	}
     	
     	action get_energy_day{
@@ -365,7 +374,10 @@ species transformer parent: agentDB {
 		}
     	powerline(my_powerline_index).demand <- powerline(my_powerline_index).demand + demand;
     	
-    	write("" + time_step + ";Transformer" + my_index + ";exceed_flag;" + (demand - transformer_power_capacity ) );    	
+    	if(print_results = 1)
+		{
+    		write("" + time_step + ";Transformer" + my_index + ";exceed_flag;" + (demand - transformer_power_capacity ) );
+    	}    	
     }
 }
 
@@ -407,7 +419,10 @@ species powerline parent: agentDB {
 		}
     	
     	generator(my_generator_index).demand <- generator(my_generator_index).demand + demand;
-    	write("" + time_step + ";Powerline" + my_index + ";exceed_flag;" + ( demand - powerline_power_capacity) );
+    	if(print_results = 1)
+		{
+    		write("" + time_step + ";Powerline" + my_index + ";exceed_flag;" + ( demand - powerline_power_capacity) );
+    	}
     }
 }
 
@@ -431,23 +446,21 @@ species generator parent: agentDB {
     
     //step production function
     action production_function_step{
-    	float step_value <- 5.0; 
     	bool increase_step <- false;
     	bool decrease_step <- false;
-    	float price_factor <- 2.0; //this value is used to mutiply or divide the base_price depending on production increase or decrease
 
     	if (demand > generator_current_production)
 	    {
-	    	if (generator_current_production + step_value <= generator_max_production)
+	    	if (generator_current_production + generator_step_value <= generator_max_production)
 	    	{
-	    		generator_current_production <- generator_current_production + step_value;
+	    		generator_current_production <- generator_current_production + generator_step_value;
 		     	increase_step <- true;
 	    	}
 	    }
 	    else{
-	    	if (demand < (generator_current_production - step_value))
+	    	if (demand < (generator_current_production - generator_step_value))
 		    {
-		    	generator_current_production <- generator_current_production - step_value;
+		    	generator_current_production <- generator_current_production - generator_step_value;
 		    	decrease_step <- true;
 		    }	
 	    }
@@ -469,8 +482,12 @@ species generator parent: agentDB {
 		{
 			write("generator: " + my_index + " demand: " + demand);
 		}
-		write("" + time_step + ";base_price;" + base_price);
-		write("" + time_step + ";power_excess;" + power_excess);
+		
+		if(print_results = 1)
+		{
+			write("" + time_step + ";base_price;" + base_price);
+			write("" + time_step + ";power_excess;" + power_excess);
+		}
 		
     }
     
@@ -540,5 +557,10 @@ experiment test type: gui {
 					}
     		}
     		*/
+    		display powerexcess_chart_display {
+					chart "Power excess" type: series {
+						data "power excess" value: power_excess color: rgb('red') ;
+					}
+    		}
 	}
 }
