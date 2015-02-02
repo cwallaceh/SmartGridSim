@@ -51,13 +51,13 @@ global {
     float generator_step_value <- 10.0;
     float price_factor <- 1.01; //this value is used to mutiply or divide the base_price depending on production increase or decrease
     
-    float transformer_power_capacity <- 20.0; //KW
-    float powerline_power_capacity <- 60.0; //KW
-    float generator_max_production <- 180.0; //KW
+    float transformer_power_capacity <- 22.0; //KW
+    float powerline_power_capacity <- 66.0; //KW
+    float generator_max_production <- 198.0; //KW
     float generator_base_production <- 5.0; //KW
     float generator_current_production <- 40.0; //KW
     
-    float max_smart_capacity <- 0.215;//(rnd(10)/100) + 0.45; //between 45 and 55%
+    float max_smart_capacity <- 0.22;//(rnd(10)/100) + 0.45; //between 45 and 55%
     
     // MySQL connection parameter
 	map<string, string>  MySQL <- [
@@ -137,7 +137,7 @@ global {
 	 	loop tr over: transformer {
 	 		tr.demand  <- 0.0;
 	 	}
-	 	if(time_step = cycle_length)
+	 	if(time_step = (cycle_length +1))
 	 	{
 	 		do halt;
 	 		//time_step <- 0;
@@ -578,7 +578,7 @@ species house parent: agentDB {
 		
 		reflex getdemand{
 			//current_demand <- (float (energy[2][time_step][0]));
-			current_power <- (float (energy[2][time_step][1]));
+			current_power <- (float (energy[2][time_step-1][1]));
 			current_demand <- current_power;
 
 			house(host).demand <- 0.0;
@@ -1584,6 +1584,7 @@ experiment test type: gui {
                     species generator aspect: icon;
                     species edge_agent aspect: base;
             }
+            /*
             display smartVsnonsmart_display {
   					chart "Total demand" type: series {
   						data "smart demand" value: totalenergy_smart color: rgb('red') ;
@@ -1591,7 +1592,7 @@ experiment test type: gui {
   						data "total demand" value: (totalenergy_smart + totalenergy_nonsmart) color: rgb('purple') ;
 					}
 			}
-			/*
+			
 		    display house_chart_display {
 					chart "House demand" type: series {
 						loop hs over: house {
@@ -1613,12 +1614,12 @@ experiment test type: gui {
   						}
 					}
     		}
-    		*/
+    		
     		display powerexcess_chart_display {
 					chart "Power excess" type: series {
 						data "power excess" value: power_excess color: rgb('red') ;
 					}
-    		}
+    		}*/
     		
 	}
 }

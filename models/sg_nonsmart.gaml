@@ -12,7 +12,7 @@ model sg_nonsmart
 
 global {
 	int debug <- 0;
-	int print_results <- 0;
+	int print_results <- 1;
 	
 	graph general_graph;
 	float totalenergy_smart <- 0.0;
@@ -44,9 +44,9 @@ global {
     float generator_step_value <- 10.0;
     float price_factor <- 1.01; //this value is used to mutiply or divide the base_price depending on production increase or decrease
     
-    float transformer_power_capacity <- 20.0; //KW
-    float powerline_power_capacity <- 60.0; //KW
-    float generator_max_production <- 180.0; //KW
+    float transformer_power_capacity <- 22.0; //KW
+    float powerline_power_capacity <- 66.0; //KW
+    float generator_max_production <- 198.0; //KW
     float generator_base_production <- 5.0; //KW
     float generator_current_production <- 40.0; //KW
     
@@ -127,7 +127,7 @@ global {
 	 	loop tr over: transformer {
 	 		tr.demand  <- 0.0;
 	 	}
-	 	if(time_step = 1439)
+	 	if(time_step = 1440)
 	 	{
 	 		//time_step <- 0;
 	 		do halt;
@@ -262,8 +262,8 @@ species house parent: agentDB {
 		
 	    reflex getdemand{
 			//write ("house_index: "+my_index+" appliance_index: "+my_appliance_index+" demand: " + energy[2][time_step][0]);
-		 	current_demand <- (float (energy[2][time_step][1])); // it used to be energy, now it is also power
-		 	current_power <- (float (energy[2][time_step][1]));
+		 	current_demand <- (float (energy[2][time_step-1][1])); // it used to be energy, now it is also power
+		 	current_power <- (float (energy[2][time_step-1][1]));
 	 		
 	 		house(host).demand <- 0.0;
 	 	
@@ -274,8 +274,8 @@ species house parent: agentDB {
 		 	{
 			 	int transfomer_index <- house(host).my_transformer_index;
 				int powerline_index <- transformer(transfomer_index).my_powerline_index;
-			 	write("" + time_step + ";SMARTPOWER;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" +current_power);
-				write("" + time_step + ";SMARTMONEY;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" + (current_power > 0 ? base_price : 0.0));
+			 	write("" + time_step + ";SMARTPOWER;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";SmartAppliance" + my_appliance_index + ";" +current_power);
+				write("" + time_step + ";SMARTMONEY;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";SmartAppliance" + my_appliance_index + ";" + (current_power > 0 ? base_price : 0.0));
 			}
 		}
 		
@@ -308,8 +308,8 @@ species house parent: agentDB {
 		float current_power;
 		
 		reflex getdemand{
-			current_demand <- (float (energy[2][time_step][1])); // it used to be energy, now it is also power
-			current_power <- (float (energy[2][time_step][1]));
+			current_demand <- (float (energy[2][time_step-1][1])); // it used to be energy, now it is also power
+			current_power <- (float (energy[2][time_step-1][1]));
 			 	
 		 	house(host).demand <- house(host).demand + current_demand;
 		 	totalenergy_nonsmart <- totalenergy_nonsmart + current_demand;
