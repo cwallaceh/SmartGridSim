@@ -7,7 +7,7 @@
  *	https://creativecommons.org/licenses/by/3.0/
  */
 
-model sg_auctions
+model sg_scheduling
 
 /* Insert your model definition here */
 
@@ -19,7 +19,7 @@ global {
 	int debug_transformer <- 0;
 	int debug_powerline <- 0;
 	int debug_generator <- 0;
-	int print_results <- 1;
+	int print_results <- 0;
 	
 	graph general_graph;
 	float totalenergy_smart <- 0.0;
@@ -253,8 +253,11 @@ species house parent: agentDB {
     list<int> pending_smart_appliances <- [];
     list<list> combinations_power_sum_tick;
 	list<list> combinations_bids_sum_tick;
-	list<float> combinations_bids_sum;
-	list<float> combinations_power_sum;
+	list<float> power_day_plan <- [];
+	list<float> temp_power_day_plan <- [];
+	int bid_start_time <- -1;
+	float used_base_price <- 0.0;
+	
     list<list> all_combinations;
     int better_combination_index;
     float better_combination_bid;
@@ -279,7 +282,6 @@ species house parent: agentDB {
 	
 	aspect icon {
         draw my_icon size: house_size at: {my_x , my_y, 0 } ;
-        //draw string(demand) size: 3 color: rgb("black") at: {my_x , my_y, 0 };
     }
 	
 	action get_my_appliances{
@@ -313,7 +315,6 @@ species house parent: agentDB {
  	  	
  	  	loop ap over: (members of_species smart_appliance){
  	  		add ap.my_appliance_index to: my_smart_appliances;
- 	  		//add ap.my_appliance_index to: pending_smart_appliances;	
  	  	}
  	  	
  	  	create other_loads number: 1 returns: other_loads_created;
@@ -333,8 +334,7 @@ species house parent: agentDB {
 		//for this step the house only has the sum of other loads demand 
 		transformer(my_transformer_index).demand <- transformer(my_transformer_index).demand + demand;
 		
-		do combinatorial_auction;
-		//do remove_appliances_not_enough_time;
+		do scheduling;
 		pending_smart_appliances <- [];
 		
 		if (time_step = cycle_length and print_results = 1)
@@ -345,174 +345,189 @@ species house parent: agentDB {
 		}
 	}
 	
-	action combinatorial_auction{
-    	do get_combinations;
-    	do get_combinations_sum;
-    	do remove_exceeded_combinations;
-    	do get_best_combination;
-    }
-    
-	action get_combinations{
-		all_combinations <- [];
-		list<int> combination <- [];
-		list<int> elements <- pending_smart_appliances;
-		int num_elements <- length(elements);
-		if (num_elements > 0){
-			loop i from:1 to: num_elements{
-				do recursive_combinations(i, elements, combination, my_index, 0);	
-			}
-			if (debug_house = 1)
-			{
-				write("House: " + my_index + " elements: " + elements);
-				write("House: " + my_index + " combinations: " + all_combinations);
-			}
-		}
-		else if (debug_house = 1)
-		{
-			write("House: " + my_index + " no more pending appliances" + " remaining smart_budget: " + smart_budget);
-		}
+	action scheduling{
+		do select_appliances;
+		do schedule;
+		do calculate_bid_power;
 	}
-    
-    action get_combinations_sum{
-    	combinations_power_sum_tick <- [];
-    	combinations_bids_sum_tick <- [];
-    	
-		int combination_index <- -1;
-		loop comb over: all_combinations{
-			add [] to: combinations_power_sum_tick;
-			add [] to: combinations_bids_sum_tick;
-			combination_index <- combination_index + 1;
-			
-			int max_index_container <- -1;
-			loop ap over: comb{
-				int num_rows <- length(smart_appliance(ap).power);
-		  		if (num_rows > 0)
-		  		{
-			  		loop i from: 0 to: num_rows - 1 {
-			  			//write("House: " + my_index  + " comb: " + comb + " Appliance: " + ap + " row: " + i + " max_index_container: " + max_index_container);
-			  			if (max_index_container < i)
-			  			{
-			  				add smart_appliance(ap).power[i] to: combinations_power_sum_tick[combination_index];
-			  				add smart_appliance(ap).energybid[i] to: combinations_bids_sum_tick[combination_index];
-			  				max_index_container <- max_index_container + 1; 
-			  			}
-			  			else
-			  			{
-			  				combinations_power_sum_tick[combination_index][i] <- float(combinations_power_sum_tick[combination_index][i]) + (smart_appliance(ap).power[i]);
-			  				combinations_bids_sum_tick[combination_index][i] <- float(combinations_bids_sum_tick[combination_index][i]) + (smart_appliance(ap).energybid[i]);
-			  			}
-			  		}
-		  		}
+	
+	//if not all appliances are in budget right now, select combination that max priorities sum
+	action select_appliances{
+		all_combinations <- [];
+		
+		loop ap over: my_smart_appliances{
+			if (smart_appliance(ap).got_energy = false and smart_appliance(ap).enough_time = true)
+			{
+				add ap to: pending_smart_appliances;
 			}
 		}
-		if (debug_house = 1)
-		{
-			write("House: " + my_index + " combinations_power_sum_tick: " + combinations_power_sum_tick);
-			write("House: " + my_index + " combinations_bids_sum_tick: " + combinations_bids_sum_tick);
-    	}
-    }
-    
-    action remove_exceeded_combinations
-    {
-    	list<int> exceeded_combinations <- [];
-    	int length_combinations <- length(all_combinations);
-    	combinations_bids_sum <- [];
-    	combinations_power_sum <- [];
-    	
-    	if (length_combinations > 0)
-    	{
-	    	loop comb from: 0 to: length_combinations - 1
-	    	{
-	    		float sum_bid <- sum( list<float>(combinations_bids_sum_tick[comb]) );
-	    		float sum_power <- sum( list<float>(combinations_power_sum_tick[comb]) ); 
-	    		if(debug_house = 1)
-	    		{
-	    			write("House: " + my_index + " comb: " + comb + " sum_bid: " + sum_bid + " smart_budget: " + smart_budget);
-	    		}
-	    		if (sum_bid > smart_budget)
-	    		{
-	    			add 0 to: combinations_bids_sum;
-	    			add 0 to: combinations_power_sum;
-	    			add comb to: exceeded_combinations;
-	    			combinations_power_sum_tick[comb] <- [];
-		    		combinations_bids_sum_tick[comb]<- [];
-	    		}
-	    		else
-	    		{
-	    			add sum_bid to: combinations_bids_sum;
-	    			add sum_power to: combinations_power_sum;
-	    		}
-	    	}
-	    	
-	    	int length_exceeded_comb <- length(exceeded_combinations);
-	    	if (length_exceeded_comb >= length_combinations)
-	    	{
-	    		enough_budget <- false;
-	    	}
-	    	
-			if (debug_house = 1)
-			{    	
-	    		write("House: " + my_index + " exceeded combinations: " + exceeded_combinations);
-	    		write("House: " + my_index + " in competence combinations: " + combinations_power_sum_tick);
-	    	}
-    	}
-    }
-    
-    action get_best_combination
-    {
-    	list<float> combinations_coef <- [];
-    	
-    	int length_combinations <- length(combinations_bids_sum);
-    	if (length_combinations > 0)
-    	{
-	    	loop comb from: 0 to: length_combinations - 1
-	    	{
-	    		if (combinations_power_sum[comb] != 0)
-	    		{
-	    			add combinations_bids_sum[comb] / combinations_power_sum[comb] to: combinations_coef;
-	    		}
-	    		else
-	    		{
-	    			add 0 to: combinations_coef;
-	    		}
-	    	}
-	    	
-	    	if (debug_house = 1){ write("House: " + my_index + "combinations_coef: " + combinations_coef); }
-	    	
-	    	float min_coeficient <- min(combinations_coef where (each > 0.0));
-    	
-	    	if (min_coeficient > 0)
-	    	{
-		    	int min_coeficient_index <- combinations_coef last_index_of min_coeficient;
-		    	
-		    	better_combination_bid <- combinations_bids_sum[min_coeficient_index];
-		    	better_combination_index <- min_coeficient_index;
-		    	
-		    	total_bid <- combinations_bids_sum[better_combination_index];
-				total_power <- combinations_power_sum[better_combination_index];
-		    	
-		    	if (debug_house = 1)
+		
+		list<int> elements <- pending_smart_appliances;
+		list<int> combination <- [];
+		int num_elements <- length(elements);
+		bool found_comb <- false;
+		
+		int i <- 0;
+		if (num_elements > 0){
+			i <- num_elements;
+			loop while: (found_comb = false and i > 0){
+				all_combinations <- [];
+				do recursive_combinations(i, elements, combination, my_index, 0);
+				
+				int num_comb_elements <- length(all_combinations);
+				if (num_comb_elements > 0)
 				{
-					write("House: " + my_index + " combinations_bids_sum: " + combinations_bids_sum);
-		    		write("House: " + my_index + " better_combination_index: " + better_combination_index + " better_combination: " + better_combination_bid );
+					
+					float best_sum_bid <- 0.0;
+					float best_sum_power <- 0.0;
+					int best_sum_priority <- -1;
+					int best_comb_index <- -1;
+								
+					int num_appliances_comb <- 0;
+
+					loop comb over: all_combinations{
+						num_appliances_comb <- length(list<int>(comb));
+						if (num_appliances_comb > 0)
+						{
+							float sum_energy <- 0.0;
+							float sum_power <- 0.0;
+							float sum_bid <- 0.0;
+							int sum_priority <- 0;
+							int sum_time <- 0;
+					
+							loop ap over: list<int>(comb){
+								sum_energy <- sum_energy + sum(smart_appliance(ap).energy);
+								sum_power <- sum_power + sum(smart_appliance(ap).power);
+								sum_priority <- sum_priority + smart_appliance(ap).priority;
+								int length_time <- length(smart_appliance(ap).energy);
+								sum_time <- sum_time + length_time; 
+							}
+							
+							sum_bid <- sum_energy * base_price;
+							
+							if(sum_bid <= smart_budget and sum_priority > best_sum_priority and sum_time < (cycle_length - time_step) ){
+								best_sum_bid <- sum_bid;
+								best_sum_power <- sum_power;
+								best_sum_priority <- sum_priority; 
+								best_comb_index <- all_combinations index_of comb;	
+							}
+						}
+					}
+					
+					if(best_comb_index >= 0){
+						found_comb <- true;
+						better_combination_bid <- best_sum_bid;
+						better_combination_index <- best_comb_index;
+						total_bid <- best_sum_bid;
+						total_power <- best_sum_power;
+					}
+					else{
+						better_combination_bid <- 0.0;
+						better_combination_index <- -1;
+						total_bid <- 0.0;
+						total_power <- 0.0;
+					}
 				}
-			}
-			else{
-				better_combination_bid <- 0.0;
-				better_combination_index <- -1;
-				total_bid <- 0.0;
-				total_power <- 0.0;
+
+				i <- i-1;
 			}
 		}
-		else
-		{
+		else{
 			better_combination_bid <- 0.0;
 			better_combination_index <- -1;
 			total_bid <- 0.0;
 			total_power <- 0.0;
 		}
-    }
-
+	}
+		 
+	action schedule{
+		temp_power_day_plan <- [];
+		temp_power_day_plan <- power_day_plan;
+		
+		if (better_combination_index >= 0)
+		{
+			int length_comb <- length(all_combinations[better_combination_index]);
+			int length_time <- 0;
+			if(length_comb > 0)
+			{
+				loop ap over: all_combinations[better_combination_index]{
+					int length_time_ap <- length(smart_appliance(ap).power);
+					length_time <- length_time + length_time_ap;
+				}
+			}
+			
+			int next_plan_index <- -1;
+			int index <- time_step;
+			loop while: (next_plan_index < 0 and index <= cycle_length ){
+				if(temp_power_day_plan[index] <= 0.0)
+				{
+					next_plan_index <- index;
+				}
+				index <- index + 1;
+			}
+			
+			if ( next_plan_index >= 0 and (cycle_length - next_plan_index) >= length_time ) //enough time in plan
+			{
+				int i <- next_plan_index;
+				bid_start_time <- i;
+				loop ap over: all_combinations[better_combination_index]{
+					smart_appliance(ap).start_time <- i; //assing start time
+					loop pow over: (smart_appliance(ap).power){
+						temp_power_day_plan[i] <- temp_power_day_plan[i] + pow;	
+						i <- i + 1;
+					}
+				}
+			}
+			else{ //not enough time in plan, backwards filling
+				int i <- cycle_length - length_time;
+				bid_start_time <- i;
+				loop ap over: all_combinations[better_combination_index]{
+					smart_appliance(ap).start_time <- i;
+					loop pow over: (smart_appliance(ap).power){
+						temp_power_day_plan[i] <- temp_power_day_plan[i] + pow;	
+						i <- i + 1;
+					}
+				}
+			}
+		}
+		
+	}
+	
+	action calculate_bid_power{
+		combinations_power_sum_tick <- [];
+		combinations_bids_sum_tick <- [];
+		
+		if (better_combination_index >= 0)
+		{
+			int length_combs <- length(all_combinations);
+			loop i from: 0 to: (length_combs - 1)
+			{
+				add [] to: combinations_power_sum_tick;
+				add [] to: combinations_bids_sum_tick;
+			}
+			
+			loop i from: 0 to: (bid_start_time - time_step - 1)
+			{
+				add 0.0 to: combinations_power_sum_tick[better_combination_index];
+				add 0.0 to: combinations_bids_sum_tick[better_combination_index];	
+			}
+			
+			loop ap over: all_combinations[better_combination_index]{
+				int length_power <- length(smart_appliance(ap).power);
+				if (length_power > 0)
+				{
+					loop j from: 0 to: (length_power - 1)
+					{
+						add smart_appliance(ap).power[j] to: combinations_power_sum_tick[better_combination_index];
+						add smart_appliance(ap).energy[j] * base_price to: combinations_bids_sum_tick[better_combination_index];	
+					}	
+				}
+			}
+			
+			used_base_price <- base_price;
+		}
+	}
+	
 	action assign_power
     {
     	//reducir presupuesto
@@ -522,42 +537,27 @@ species house parent: agentDB {
     	}
     	smart_budget <- smart_budget - total_bid;
     	
+    	write("house" + my_index + " assign_power " + all_combinations[better_combination_index]);
+    	
+    	power_day_plan <- [];
+		power_day_plan <- temp_power_day_plan;
+		
     	loop ap over: all_combinations[better_combination_index]
     	{
     		//remove ap from: pending_smart_appliances;
     		smart_appliance(ap).got_energy <- true;
+    		smart_appliance(ap).used_base_price_app <- used_base_price;
     	}
     	
-    	//reassign priorities to pending appliances
-    	/*
-    	int num_pending_smart_appliances <- length(pending_smart_appliances);
-    	if (num_pending_smart_appliances > 0)
-    	{
-    		list<int> priorities <- [];
-    		int new_priority_to_assign <- 0;
-    		
-    		loop i from: 1 to: num_pending_smart_appliances {
-				add i to: priorities;
-			}	
-			loop ap over: pending_smart_appliances{
-    			new_priority_to_assign <- one_of(priorities);
-    			remove new_priority_to_assign from: priorities;
-    			smart_appliance(ap).priority <- new_priority_to_assign;
-    		}
-    	} */
     }
-	
-	/*action remove_appliances_not_enough_time{
-		loop ap over: pending_smart_appliances{
-			if (smart_appliance(ap).enough_time = false)
-			{
-				remove ap from: pending_smart_appliances;
-			} 
-		}
-	}*/
-	
+   
 	init{
 		do get_my_appliances;
+		
+		loop i from: 0 to: cycle_length{
+			add 0.0 to: power_day_plan;
+		}
+		
 		if (debug_house = 1)
 		{
 			write("house_index: " + my_index + " house_profile: " + houseprofile);
@@ -628,25 +628,28 @@ species house parent: agentDB {
 		bool enough_time <- true;
 		int energy_index <- 0;
 		int length_energy;
-		
+		int start_time <- -1;
+		float used_base_price_app <- 0.0;
+
 	    reflex getdemand{
 	    	int transfomer_index <- house(host).my_transformer_index;
 			int powerline_index <- transformer(transfomer_index).my_powerline_index;
 	    	
-	    	if (got_energy = true and length_energy > 0 and energy_index < length_energy)
+	    	if (got_energy = true and length_energy > 0 and energy_index < length_energy and start_time <= time_step and zero_power = false)
 	    	{
+
 	    		if (debug_house = 1)
 				{
 	    			write ("house_index: " + my_index + " appliance_index: " + my_appliance_index + " demand: " + power[energy_index]);
 			 	}
-			 	//current_demand <- energy[energy_index];
+
 			 	current_demand <- power[energy_index];
 			 	house(host).demand <- house(host).demand + current_demand;
 			 	totalenergy_smart <- totalenergy_smart + current_demand;
 			 	
 			 	if (print_results = 1){
 				 	write("" + time_step + ";SMARTPOWER;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";SmartAppliance" + my_appliance_index + ";" +power[energy_index]);
-				 	write("" + time_step + ";SMARTMONEY;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";SmartAppliance" + my_appliance_index + ";" +energybid[energy_index]);
+				 	write("" + time_step + ";SMARTMONEY;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";SmartAppliance" + my_appliance_index + ";" +used_base_price_app);
 			 	}
 			 	
 			 	energy_index <- energy_index + 1;
@@ -661,10 +664,6 @@ species house parent: agentDB {
 	    		if ( got_energy = false and zero_power = false) {
 		    		if ( enough_budget = true and ((cycle_length) - time_step) <= length_energy ){
 		    			enough_time <- false;
-		    		}
-		    		if (enough_time = true) {
-		    			add my_appliance_index to: house(host).pending_smart_appliances;
-		    			do calculate_bid;
 		    		}
 		    	}
 	    	
@@ -714,22 +713,16 @@ species house parent: agentDB {
 			{
 				draw sphere(appliance_size) color: rgb("gray") at:{my_appliance_x, my_appliance_y, 0};
 			}
-			
-			//draw sphere(appliance_size) color: ((got_energy = true) ? rgb("red") : (zero_power = true ? rgb("yellow") : ( enough_time = false ? rgb("lightcoral") : rgb("gray")))) at:{my_appliance_x, my_appliance_y, 0};
-        	//draw my_icon size: appliance_size color: ( (got_energy = true) ? rgb("green") : rgb("black")) at:{my_appliance_x, my_appliance_y, 0};
-        	//draw string("*") size: 4 color: (got_energy=true ? rgb("green"):rgb("black")) at:{my_appliance_x, my_appliance_y, 0};
-        	//draw string(current_demand) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
-        	//draw string(priority) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
     	}
     	
     	action get_power_day{
     		ask agentDB{
 				myself.energyandpower <- list<list> (self select(select:"SELECT energy, power FROM appliances_profiles WHERE id_appliance = "+myself.appliance_id+" AND id_household_profile = "+myself.houseprofile+" AND power != 0 ORDER BY time;"));
 			}
-			do get_energy_power_bid;
+			do get_energy_power;
     	}
     	
-    	action get_energy_power_bid{
+    	action get_energy_power{
     		int num_rows <- length( (energyandpower[2]) );
     		if (num_rows > 0){
 	    		loop i from: 0 to: (num_rows - 1){
@@ -741,25 +734,8 @@ species house parent: agentDB {
     			zero_power <- true;
     		}
     		length_energy <- length(energy);
-    		do calculate_bid;
-    	}
-    	
-    	action calculate_bid{
-    		energybid <- [];
-    		if (length_energy > 0){
-    			loop i from: 0 to: (length_energy - 1){
-    				add (energy[i] * base_price * priority * (rnd(5)/10 + 0.5)) to: energybid;	
-    			}
-    		}
     	}
 	}
-
-
-//Smart compressor (subspecies of house)
-	//species smart_compressor parent: agentDB{
-	//	
-	//}
-
 }
 
 //Transformers
