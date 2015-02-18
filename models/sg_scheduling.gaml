@@ -19,7 +19,7 @@ global {
 	int debug_transformer <- 0;
 	int debug_powerline <- 0;
 	int debug_generator <- 0;
-	int print_results <- 0;
+	int print_results <- 1;
 	
 	graph general_graph;
 	float totalenergy_smart <- 0.0;
@@ -122,7 +122,6 @@ global {
 	 }
 	 
 	reflex restart_power_and_time{
-	 	//write ("totalenergy_smart: " + totalenergy_smart);
 	 	totalenergy_smart <- 0.0;
 	 	totalenergy_nonsmart <- 0.0;
 	 	
@@ -140,7 +139,6 @@ global {
 	 	if(time_step = cycle_length)
 	 	{
 	 		do halt;
-	 		//time_step <- 0;
 	 	}
 	 	else
 	 	{
@@ -183,7 +181,6 @@ species agentDB parent: AgentDB {
 	
 	action recursive_combinations (int r, list<int> elements, list<int> combination, int device_id, int type)
     {
-    	//write("do_recursion  r: " + r + " elements: " + elements + " combination: " + combination );
     	int length_elements <- length(elements);
     	
     	if (r = 1)
@@ -198,22 +195,18 @@ species agentDB parent: AgentDB {
 					match 0 //type house
 					{
 						add new_combination to: house(device_id).all_combinations;
-						//write("House: " + device_id + " combination: " + new_combination);
 					}
 					match 1 //type transfomer
 					{
 						add new_combination to: transformer(device_id).all_combinations;
-						//write("Transformer: " + device_id + " combination: " + new_combination);		
 					}
 					match 2 //type powerline
 					{
-						add new_combination to: powerline(device_id).all_combinations;
-						//write("Powerline: " + device_id + " combination: " + new_combination);		
+						add new_combination to: powerline(device_id).all_combinations;		
 					}
 					match 3 //type generator
 					{
-						add new_combination to: generator(device_id).all_combinations;
-						//write("Generator: " + device_id + " combination: " + new_combination);		
+						add new_combination to: generator(device_id).all_combinations;	
 					}
 				}
 				
@@ -537,14 +530,11 @@ species house parent: agentDB {
     	}
     	smart_budget <- smart_budget - total_bid;
     	
-    	write("house" + my_index + " assign_power " + all_combinations[better_combination_index]);
-    	
     	power_day_plan <- [];
 		power_day_plan <- temp_power_day_plan;
 		
     	loop ap over: all_combinations[better_combination_index]
     	{
-    		//remove ap from: pending_smart_appliances;
     		smart_appliance(ap).got_energy <- true;
     		smart_appliance(ap).used_base_price_app <- used_base_price;
     	}
@@ -577,7 +567,6 @@ species house parent: agentDB {
 		float current_power;
 		
 		reflex getdemand{
-			//current_demand <- (float (energy[2][time_step][0]));
 			current_power <- (float (energy[2][time_step][1]));
 			current_demand <- current_power;
 
@@ -596,8 +585,6 @@ species house parent: agentDB {
 			
 		aspect appliance_icon {
 			draw sphere(appliance_size) color: rgb("blue") at:{my_appliance_x, my_appliance_y, 0};
-        	//draw my_icon size: appliance_size color:rgb("blue")  at:{my_appliance_x, my_appliance_y, 0};
-        	//draw string(current_demand) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
     	}
     	
     	action get_power_day{
@@ -853,7 +840,6 @@ species transformer parent: agentDB {
 		  		if (num_rows > 0)
 		  		{
 			  		loop i from: 0 to: num_rows - 1 {
-			  			//write("Transformer: " + my_index  + " comb: " + comb + " House: " + hs + " row: " + i + " max_index_container: " + max_index_container);
 			  			if (max_index_container < i)
 			  			{
 			  				add house(hs).combinations_power_sum_tick[hs_better_combination_index][i] to: combinations_power_sum_tick[combination_index];
@@ -1081,16 +1067,12 @@ species powerline parent: agentDB {
 			loop tr over: comb{
 				int transf_better_combination_index <- transformer(tr).better_combination_index;
 				int num_rows <- length(transformer(tr).combinations_power_sum_tick[transf_better_combination_index]);
-				//write("Transformer: " + tr + " transf_better_combination_index: " + transf_better_combination_index);
-				//write("Transformer: " + tr + " elem better comb: " + transformer(tr).combinations_power_sum_tick[transf_better_combination_index]);
 		  		
 		  		if (num_rows > 0)
 		  		{
 		  			loop i from: 0 to: num_rows - 1 {
-			  			//write("Powerline: " + my_index  + " comb: " + comb + " Transformer: " + tr + " row: " + i + " max_index_container: " + max_index_container);
 			  			if (max_index_container < i)
 			  			{
-			  				//write("Powerline: " + my_index  + " comb: " + comb + " Transformer: " + tr + " row: " + i + " "+ transformer(tr).combinations_power_sum_tick[transf_better_combination_index][i]);
 			  				add transformer(tr).combinations_power_sum_tick[transf_better_combination_index][i] to: combinations_power_sum_tick[combination_index];
 			  				add transformer(tr).combinations_bids_sum_tick[transf_better_combination_index][i] to: combinations_bids_sum_tick[combination_index];
 			  				max_index_container <- max_index_container + 1; 
@@ -1384,16 +1366,12 @@ species generator parent: agentDB {
 			loop pl over: comb{
 				int pl_better_combination_index <- powerline(pl).better_combination_index;
 				int num_rows <- length(powerline(pl).combinations_power_sum_tick[pl_better_combination_index]);
-				//write("Powerline: " + pl + " pl_better_combination_index: " + pl_better_combination_index);
-				//write("Powerline: " + pl + " elem better comb: " + powerline(pl).combinations_power_sum_tick[pl_better_combination_index]);
 		  		
 		  		if (num_rows > 0)
 		  		{
 		  			loop i from: 0 to: num_rows - 1 {
-			  			//write("Generator: " + my_index  + " comb: " + comb + " Powerline: " + pl + " row: " + i + " max_index_container: " + max_index_container);
 			  			if (max_index_container < i)
 			  			{
-			  				//write("Generator: " + my_index  + " comb: " + comb + " Powerline: " + pl + " row: " + i + " "+ powerline(pl).combinations_power_sum_tick[pl_better_combination_index][i]);
 			  				add powerline(pl).combinations_power_sum_tick[pl_better_combination_index][i] to: combinations_power_sum_tick[combination_index];
 			  				add powerline(pl).combinations_bids_sum_tick[pl_better_combination_index][i] to: combinations_bids_sum_tick[combination_index];
 			  				max_index_container <- max_index_container + 1; 
@@ -1488,11 +1466,6 @@ species generator parent: agentDB {
 				{
 					write("Generator: " + my_index + " combinations_bids_sum: " + combinations_bids_sum);
 		    		write("Generator: " + my_index + " better_combination_index: " + better_combination_index + " better_combination: " + better_combination );
-		    		/*int length_rows <- length(combinations_power_sum_tick[better_combination_index]);
-		    		if (length_rows > 0)
-		    		{
-		    			write("Generator: " + my_index + " smart power to sell: " + combinations_power_sum_tick[better_combination_index][0] + "smart_power_capacity: " + generated_smart_power_per_tick[time_step]);
-		    		}*/
 		    	}
 	    	}
 	    	else{
@@ -1541,7 +1514,6 @@ grid land width: grid_width height: grid_height neighbours: 4 {
 
 //Experiment
 experiment test type: gui {
-    //parameter "Number of houses: " var: num_houses min: 4 max: 100 category: "House" ;
     parameter "Debug House: " var: debug_house min: 0 max: 1 category: "General configuration" ;
     parameter "Debug Transformer: " var: debug_transformer min: 0 max: 1 category: "General configuration" ;
     parameter "Debug Powerline: " var: debug_powerline min: 0 max: 1 category: "General configuration" ;
@@ -1567,29 +1539,6 @@ experiment test type: gui {
   						data "total demand" value: (totalenergy_smart + totalenergy_nonsmart) color: rgb('purple') ;
 					}
 			}
-			/*
-		    display house_chart_display {
-					chart "House demand" type: series {
-						loop hs over: house {
-  							data "house" + hs + " demand" value: house(hs).demand color: rnd_color(255) ;
-  						}
-					}
-    		}
-    		display transformer_chart_display {
-					chart "Transformer demand" type: series {
-						loop tr over: transformer {
-  							data "transformer" + tr + " demand" value: transformer(tr).demand color: rnd_color(255) ;
-  						}
-					}
-    		}
-    		display powerline_chart_display {
-					chart "Powerlines demand" type: series {
-						loop pl over: powerline {
-  							data "Powerline" + pl + " demand" value: powerline(pl).demand color: rnd_color(255) ;
-  						}
-					}
-    		}
-    		*/
     		display powerexcess_chart_display {
 					chart "Power excess" type: series {
 						data "power excess" value: power_excess color: rgb('red') ;
