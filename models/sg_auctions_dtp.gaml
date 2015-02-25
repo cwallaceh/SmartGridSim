@@ -19,7 +19,7 @@ global {
 	int debug_transformer <- 0;
 	int debug_powerline <- 0;
 	int debug_generator <- 0;
-	int print_results <- 1;
+	int print_results <- 0;
 	
 	graph general_graph;
 	float totalenergy_smart <- 0.0;
@@ -57,7 +57,9 @@ global {
     float generator_base_production <- 5.0; //KW
     float generator_current_production <- 40.0; //KW
     
-    float max_smart_capacity <- 0.22;//(rnd(10)/100) + 0.45; //between 45 and 55%
+    float max_smart_capacity <- 0.65; //0.22;//(rnd(10)/100) + 0.45; //between 45 and 55%
+    
+    int production_period <- 3;
     
     // MySQL connection parameter
 	map<string, string>  MySQL <- [
@@ -1249,6 +1251,8 @@ species generator parent: agentDB {
 	float mean_smart_demand <- 0.0;
 	float median_smart_demand <- 0.0;
 	float min_smart_demand <- 0.0;
+	list<list> powerproductionperiods_list;
+	list<float> powerproductionperiods;
        
 	aspect base {
 		draw sphere(generator_size) color: rgb('red') at: {my_x , my_y , 0 } ;			
@@ -1279,6 +1283,22 @@ species generator parent: agentDB {
 		}
     }
     
+    
+    /*
+     * (Non-smart)Time Of Use - Dividir en 24 hrs, y determinar produccion y precio por periodo, utilizar base de datos non-smart
+     * (Smart)Real-Time Pricing - Adaptar la produccion y el precio a la demanda 
+     */
+     
+    action production_function_non_smart{
+		int num_rows <- length( (powerproductionperiods_list) );
+		if (num_rows > 0){
+			int index <- round(floor(floor(time_step/60)/(24/production_period)));
+			generator_current_production <- powerproductionperiods_list[2][index][1];
+			do recalculate_available_power;
+		}
+    } 
+    
+     
     //step production function
     action production_function_step{ 
     	bool increase_step <- false;
@@ -1354,7 +1374,8 @@ species generator parent: agentDB {
      */
      	power_excess <- generator_current_production - demand;
      	//write("time: " + time_step + " power_excess: " + power_excess + " current_production: " + current_production + " demand: " + demand );
-		do production_function_step;
+		//do production_function_step;
+		do production_function_non_smart;
     }
     
     action combinatorial_auction{
@@ -1549,6 +1570,12 @@ species generator parent: agentDB {
 	    	}
     	}
     } 	
+	
+	init {
+		ask agentDB{
+			myself.powerproductionperiods_list <- list<list> (self select(select:"select hour(a.time) div (24/"+production_period+") period, max(power) power from	( select time, sum(power) power from appliances_profiles group by time ) a group by hour(a.time) div (24/"+production_period+");"));
+		}
+	}
 }
 
 //Graph
@@ -1566,6 +1593,7 @@ grid land width: grid_width height: grid_height neighbours: 4 {
 //Experiment
 experiment test type: gui {
     //parameter "Number of houses: " var: num_houses min: 4 max: 100 category: "House" ;
+    parameter "Production periods: " var: production_period min: 1 max: 24 category: "Power generation" ;
     parameter "Debug House: " var: debug_house min: 0 max: 1 category: "General configuration" ;
     parameter "Debug Transformer: " var: debug_transformer min: 0 max: 1 category: "General configuration" ;
     parameter "Debug Powerline: " var: debug_powerline min: 0 max: 1 category: "General configuration" ;
@@ -1584,15 +1612,16 @@ experiment test type: gui {
                     species generator aspect: icon;
                     species edge_agent aspect: base;
             }
-            /*
+            
             display smartVsnonsmart_display {
   					chart "Total demand" type: series {
   						data "smart demand" value: totalenergy_smart color: rgb('red') ;
   						data "non-smart demand" value: totalenergy_nonsmart color: rgb('blue') ;
   						data "total demand" value: (totalenergy_smart + totalenergy_nonsmart) color: rgb('purple') ;
+  						data "current power production" value: generator_current_production color: rgb('black');
 					}
 			}
-			
+			/*
 		    display house_chart_display {
 					chart "House demand" type: series {
 						loop hs over: house {
