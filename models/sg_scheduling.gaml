@@ -19,7 +19,7 @@ global {
 	int debug_transformer <- 0;
 	int debug_powerline <- 0;
 	int debug_generator <- 0;
-	int print_results <- 1;
+	int print_results <- 0;
 	
 	graph general_graph;
 	float totalenergy_smart <- 0.0;
@@ -51,6 +51,15 @@ global {
     float generator_step_value <- 10.0;
     float price_factor <- 1.01; //this value is used to mutiply or divide the base_price depending on production increase or decrease
     
+    float transformer_power_capacity <- 22.0; //KW
+    float powerline_power_capacity <- 66.0; //KW
+    float generator_max_production <- 198.0; //KW
+    float generator_base_production <- 5.0; //KW
+    float generator_current_production <- 40.0; //KW
+    
+    float max_smart_capacity <- 0.22;//(rnd(10)/100) + 0.45; //between 45 and 55%
+    
+    /* 
     float transformer_power_capacity <- 20.0; //KW
     float powerline_power_capacity <- 60.0; //KW
     float generator_max_production <- 180.0; //KW
@@ -58,6 +67,7 @@ global {
     float generator_current_production <- 40.0; //KW
     
     float max_smart_capacity <- 0.215;//(rnd(10)/100) + 0.45; //between 45 and 55%
+    */
     
     // MySQL connection parameter
 	map<string, string>  MySQL <- [
