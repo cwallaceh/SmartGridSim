@@ -63,6 +63,12 @@ global {
     float generator_current_production_smart <- 40.0; //KW
     float generator_current_production_nonsmart <- 40.0; //KW
     
+    string production_function_smart <- "Max";
+    string production_function_nonsmart <- "Max";
+    
+    string price_function <- "Cosine";
+    float price_constant <- 1.0;
+    
     // MySQL connection parameter
 	map<string, string>  MySQL <- [
     'host'::'localhost',
@@ -1219,13 +1225,18 @@ species generator parent: agentDB {
 	list<float> powerproductionperiods_smart;
 	int production_period_smart <- 3;
 	
-	//production function - max production - non smart variables
-	list<list> powerproductionmax_list_nonsmart;
-	float maxpowerproduction_nonsmart;
-	
 	//production function - max production - smart variables
 	list<list> powerproductionmax_list_smart;
 	float maxpowerproduction_smart;
+	
+	//production fuction - period production - non smart variables
+	list<list> powerproductionperiods_list_nonsmart;
+	list<float> powerproductionperiods_nonsmart;
+	int production_period_nonsmart <- 3;
+	
+	//production function - max production - non smart variables
+	list<list> powerproductionmax_list_nonsmart;
+	float maxpowerproduction_nonsmart;
 	
        
 	aspect base {
@@ -1267,12 +1278,25 @@ species generator parent: agentDB {
 			do recalculate_available_power;
 		}
     } 
-        
+    
+    action production_function_period_nonsmart{
+		int num_rows <- length( (powerproductionperiods_list_nonsmart) );
+		if (num_rows > 0){
+			int index <- round(floor(floor(time_step/60)/(24/production_period_nonsmart)));
+			generator_current_production_nonsmart <- float(powerproductionperiods_list_nonsmart[2][index][1]);
+			do recalculate_available_power;
+		}
+    }
+    
     action price_cosine{
     	//base_price <- ( -1 * cos( (360 * time_step) /cycle_length ) ) + 2; //base_price between 1 and 3, cosine func
     	//base_price <- ( -0.5 * cos( (360 * time_step) /cycle_length ) ) + 1.5; //base_price between 1 and 2, cosine func
     	base_price <- ( -0.25 * cos( (360 * time_step) /cycle_length ) ) + 1.25; //base_price between 1 and 1.5, cosine func
     	//write("time_step" + time_step + " base_price: " + base_price);
+    }
+    
+    action price_constant{
+    	base_price <- price_constant;
     }
     
      /* 
@@ -1346,14 +1370,29 @@ species generator parent: agentDB {
      	power_excess_nonsmart <- generator_current_production_nonsmart - demand_nonsmart;
      	power_excess_smart <- generator_current_production_smart - demand_smart;
 
-		//do production_function_step;
+		//do production_function_step; //deprecated
+	
+		if (production_function_smart = "Max"){
+			do production_function_max_smart;	
+		}
+		else if (production_function_smart = "Period"){
+			do production_function_period_smart;
+		}
+
+		if (production_function_nonsmart = "Max"){
+			do production_function_max_nonsmart;	
+		}
+		else if (production_function_nonsmart = "Period"){
+			do production_function_period_nonsmart;
+		}
 		
-		//do production_function_period_smart;
-		do production_function_max_smart;
+		if (price_function = "Cosine"){
+			do price_cosine;
+		}
+		else if (price_function = "Constant"){
+			do price_constant;
+		}
 		
-		do production_function_max_nonsmart;
-		
-		do price_cosine;
     }
     
     action combinatorial_auction{
@@ -1553,8 +1592,11 @@ species generator parent: agentDB {
 		
 		ask agentDB{
 			myself.powerproductionperiods_list_smart <- list<list> (self select(select:"select hour(a.time) div (24/"+myself.production_period_smart+") period, max(power) power from ( select time, sum(power) power from appliances_profiles where id_appliance in (select id_appliance from appliances where isSmart = 1) group by time ) a group by hour(a.time) div (24/"+myself.production_period_smart+");"));
-			myself.powerproductionmax_list_nonsmart <- list<list> (self select(select:"select max(power) power from ( select time, sum(power) power from appliances_profiles where id_appliance not in (select id_appliance from appliances where isSmart = 1) group by time ) a ;"));
 			myself.powerproductionmax_list_smart <- list<list> (self select(select:"select max(power) power from ( select time, sum(power) power from appliances_profiles where id_appliance in (select id_appliance from appliances where isSmart = 1) group by time ) a ;"));
+			
+			myself.powerproductionperiods_list_smart <- list<list> (self select(select:"select hour(a.time) div (24/"+myself.production_period_nonsmart+") period, max(power) power from ( select time, sum(power) power from appliances_profiles where id_appliance not in (select id_appliance from appliances where isSmart = 1) group by time ) a group by hour(a.time) div (24/"+myself.production_period_nonsmart+");"));
+			myself.powerproductionmax_list_nonsmart <- list<list> (self select(select:"select max(power) power from ( select time, sum(power) power from appliances_profiles where id_appliance not in (select id_appliance from appliances where isSmart = 1) group by time ) a ;"));
+			
 			
 		}
 	}
@@ -1580,6 +1622,14 @@ experiment test type: gui {
     parameter "Debug Powerline: " var: debug_powerline min: 0 max: 1 category: "General configuration" ;
     parameter "Debug Generator: " var: debug_generator min: 0 max: 1 category: "General configuration" ;
     parameter "Print results: " var: print_results min: 0 max: 1 category: "General configuration" ;
+    
+    parameter "Smart Production Function: " var: production_function_smart among:["Max","Period"] category: "Power Generation configuration" ; 
+    parameter "Non-Smart Production Function: " var: production_function_nonsmart among:["Max","Period"] category: "Power Generation configuration" ;
+    
+    
+    parameter "Price Function: " var: price_function among:["Cosine","Constant"] category: "Price function configuration" ;
+    parameter "Constant Power price: " var: price_constant  min: 1.0 max: 10.0 category: "Price function configuration" ;
+    
     
     output {
             display main_display type: opengl {
