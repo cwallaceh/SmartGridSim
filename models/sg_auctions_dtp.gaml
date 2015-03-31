@@ -50,16 +50,14 @@ global {
     float power_excess_smart <- 0.00;
     float power_excess_nonsmart <- 0.00;
     float generator_step_value <- 10.0;
-    float price_factor <- 1.01; //this value is used to mutiply or divide the base_price depending on production increase or decrease
-    
+
     float transformer_power_capacity_smart <- 10.0; //KW
     float transformer_power_capacity_nonsmart <- 10.0; //KW
     float powerline_power_capacity_smart <- 30.0; //KW
     float powerline_power_capacity_nonsmart <- 30.0; //KW
     float generator_max_production_smart <- 60.0; //KW
     float generator_max_production_nonsmart <- 60.0; //KW
-   
-    //float generator_base_production <- 5.0; //KW
+
     float generator_current_production_smart <- 40.0; //KW
     float generator_current_production_nonsmart <- 40.0; //KW
     
@@ -67,6 +65,12 @@ global {
     string production_function_nonsmart <- "Max";
     
     string price_function <- "Cosine";
+    
+    //for cosine price function
+    float price_cosine_base <- 1.25;
+    float price_cosine_bound <- 0.25;
+    
+    //for constant price function
     float price_constant <- 1.0;
     
     // MySQL connection parameter
@@ -149,7 +153,7 @@ global {
 	 		tr.demand_smart  <- 0.0;
 	 		tr.demand_nonsmart  <- 0.0;
 	 	}
-	 	if(time_step = (cycle_length + 1))
+	 	if( time_step = cycle_length )
 	 	{
 	 		do halt;
 	 	}
@@ -211,11 +215,11 @@ species agentDB parent: AgentDB {
 					}
 					match 1 //type transfomer
 					{
-						add new_combination to: transformer(device_id).all_combinations;	
+						add new_combination to: transformer(device_id).all_combinations;
 					}
 					match 2 //type powerline
 					{
-						add new_combination to: powerline(device_id).all_combinations;	
+						add new_combination to: powerline(device_id).all_combinations;
 					}
 					match 3 //type generator
 					{
@@ -342,7 +346,6 @@ species house parent: agentDB {
 		transformer(my_transformer_index).demand_smart <- transformer(my_transformer_index).demand_nonsmart + demand_smart;
 		
 		do combinatorial_auction;
-		//do remove_appliances_not_enough_time;
 		pending_smart_appliances <- [];
 		
 		if (time_step = cycle_length and print_results = 1)
@@ -557,7 +560,7 @@ species house parent: agentDB {
 		float current_power;
 		
 		reflex getdemand{
-			current_power <- (float (energy[2][time_step-1][1]));
+			current_power <- (float (energy[2][time_step][1]));
 			current_demand <- current_power;
 
 			house(host).demand_nonsmart <- 0.0;
@@ -1206,7 +1209,6 @@ species generator parent: agentDB {
     file my_icon <- file("../images/PowerPlant.gif") ;
     float demand_smart;
     float demand_nonsmart;
-    int finish <- 0;
     list<float> available_nonsmart_power_per_tick;
     list<float> generated_smart_power_per_tick;
     list<float> sold_smart_power_per_tick;
@@ -1215,10 +1217,6 @@ species generator parent: agentDB {
 	list<float> combinations_bids_sum;
 	list<list> all_combinations;
 	int better_combination_index;
-	//float highest_smart_demand <- 0.0;
-	//float mean_smart_demand <- 0.0;
-	//float median_smart_demand <- 0.0;
-	//float min_smart_demand <- 0.0;
 	
 	//production fuction - period production - smart variables
 	list<list> powerproductionperiods_list_smart;
@@ -1248,9 +1246,11 @@ species generator parent: agentDB {
     }
     
     action recalculate_available_power{
-    	loop i from: (time_step + 1) to: cycle_length{
-			available_nonsmart_power_per_tick[i] <- generator_current_production_nonsmart;
-			generated_smart_power_per_tick[i] <- generator_current_production_smart;
+    	if (time_step < cycle_length){
+	    	loop i from: (time_step + 1) to: cycle_length{
+				available_nonsmart_power_per_tick[i] <- generator_current_production_nonsmart;
+				generated_smart_power_per_tick[i] <- generator_current_production_smart;
+			}
 		}
     }
     
@@ -1289,65 +1289,13 @@ species generator parent: agentDB {
     }
     
     action price_cosine{
-    	//base_price <- ( -1 * cos( (360 * time_step) /cycle_length ) ) + 2; //base_price between 1 and 3, cosine func
-    	//base_price <- ( -0.5 * cos( (360 * time_step) /cycle_length ) ) + 1.5; //base_price between 1 and 2, cosine func
-    	base_price <- ( -0.25 * cos( (360 * time_step) /cycle_length ) ) + 1.25; //base_price between 1 and 1.5, cosine func
-    	//write("time_step" + time_step + " base_price: " + base_price);
+    	//base_price <- ( -0.25 * cos( (360 * time_step) /cycle_length ) ) + 1.25; //base_price between 1 and 1.5, cosine func
+    	base_price <- ( (price_cosine_bound * -1) * cos( (360 * time_step) /cycle_length ) ) + price_cosine_base; 
     }
     
     action price_constant{
     	base_price <- price_constant;
     }
-    
-     /* 
-     //la funcion smart que tenemos
-    //step production function
-    action production_function_step{ 
-    	bool increase_step <- false;
-    	bool decrease_step <- false;
-		
-		if ( ((demand > ( min_smart_demand * max_smart_capacity )) ? demand : ( min_smart_demand * max_smart_capacity )) > generator_current_production)
-    	//if ( (demand + (highest_smart_demand * 0.01)) > generator_current_production)
-    	//if ( demand > generator_current_production)
-	    {
-	    	if ((generator_current_production + generator_step_value) <= generator_max_production)
-	    	{
-	    		generator_current_production <- generator_current_production + generator_step_value;
-		     	increase_step <- true;
-		     	do recalculate_available_power;
-	    	}
-	    }
-	    else{
-	    	float var <- 0.0;
-	    	if (time_step < (cycle_length))
-	    	{
-	    		 var <- generator_current_production - generator_step_value - sold_smart_power_per_tick[time_step+1] ; //considers next tick's sold power 
-	    	}
-	    	else
-	    	{
-	    		var <- generator_current_production - generator_step_value;
-	    	}
-	    	if ( ((demand > ( min_smart_demand * max_smart_capacity )) ? demand : ( min_smart_demand * max_smart_capacity )) < var)
-	    	//if ( (demand + (highest_smart_demand * 0.01)) < var)
-	    	//if ( demand < var)
-		    {
-		    	generator_current_production <- generator_current_production - generator_step_value;
-		    	decrease_step <- true;
-		    	do recalculate_available_power;
-		    }	
-	    }
-	    
-	    if (increase_step = true)
-	    {
-	    	base_price <- base_price * price_factor;
-	    }
-	    
-	    if (decrease_step = true)
-	    {
-	    	base_price <- base_price / price_factor;
-	    }
-	    
-    }*/
     
     reflex get_demand{
     	if (debug_generator = 1)
@@ -1369,8 +1317,6 @@ species generator parent: agentDB {
     reflex production_and_price{
      	power_excess_nonsmart <- generator_current_production_nonsmart - demand_nonsmart;
      	power_excess_smart <- generator_current_production_smart - demand_smart;
-
-		//do production_function_step; //deprecated
 	
 		if (production_function_smart = "Max"){
 			do production_function_max_smart;	
@@ -1472,10 +1418,6 @@ species generator parent: agentDB {
 			loop i from: 0 to: length_combs - 1{
 				add sum(list<float>(combinations_power_sum_tick[i])) to: sum_comb;
 			}
-			//highest_smart_demand <- max(sum_comb);
-			//mean_smart_demand <- mean(sum_comb);
-			//median_smart_demand <- median(sum_comb);
-			//min_smart_demand <- min(sum_comb where (each > 0.0));
 		}
 		
 		if (debug_generator = 1)
@@ -1596,8 +1538,6 @@ species generator parent: agentDB {
 			
 			myself.powerproductionperiods_list_smart <- list<list> (self select(select:"select hour(a.time) div (24/"+myself.production_period_nonsmart+") period, max(power) power from ( select time, sum(power) power from appliances_profiles where id_appliance not in (select id_appliance from appliances where isSmart = 1) group by time ) a group by hour(a.time) div (24/"+myself.production_period_nonsmart+");"));
 			myself.powerproductionmax_list_nonsmart <- list<list> (self select(select:"select max(power) power from ( select time, sum(power) power from appliances_profiles where id_appliance not in (select id_appliance from appliances where isSmart = 1) group by time ) a ;"));
-			
-			
 		}
 	}
 }
@@ -1629,8 +1569,9 @@ experiment test type: gui {
     
     parameter "Price Function: " var: price_function among:["Cosine","Constant"] category: "Price function configuration" ;
     parameter "Constant Power price: " var: price_constant  min: 1.0 max: 10.0 category: "Price function configuration" ;
-    
-    
+    parameter "Cosine Power price base: " var: price_cosine_base  min: 0.0 max: 10.0 category: "Price function configuration" ;
+    parameter "Cosine Power price bound: " var: price_cosine_bound  min: 0.0 max: 10.0 category: "Price function configuration" ;
+  
     output {
             display main_display type: opengl {
             		grid land;
@@ -1682,6 +1623,5 @@ experiment test type: gui {
 						data "power excess" value: power_excess color: rgb('red') ;
 					}
     		}*/
-    		
 	}
 }
