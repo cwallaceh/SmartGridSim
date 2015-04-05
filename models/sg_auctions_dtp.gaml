@@ -19,7 +19,7 @@ global {
 	int debug_transformer <- 0;
 	int debug_powerline <- 0;
 	int debug_generator <- 0;
-	int print_results <- 0;
+	int print_results <- 1;
 	
 	graph general_graph;
 	float totalenergy_smart <- 0.0;
@@ -49,7 +49,6 @@ global {
     float base_price <- 1.00; //per kwh
     float power_excess_smart <- 0.00;
     float power_excess_nonsmart <- 0.00;
-    float generator_step_value <- 10.0;
 
     float transformer_power_capacity_smart <- 10.0; //KW
     float transformer_power_capacity_nonsmart <- 10.0; //KW
@@ -153,7 +152,7 @@ global {
 	 		tr.demand_smart  <- 0.0;
 	 		tr.demand_nonsmart  <- 0.0;
 	 	}
-	 	if( time_step = cycle_length )
+	 	if( time_step = ( cycle_length + 1 ))
 	 	{
 	 		do halt;
 	 	}
@@ -348,7 +347,7 @@ species house parent: agentDB {
 		do combinatorial_auction;
 		pending_smart_appliances <- [];
 		
-		if (time_step = cycle_length and print_results = 1)
+		if (time_step = (cycle_length + 1) and print_results = 1)
 		{
 			int powerline_index <- transformer(my_transformer_index).my_powerline_index;
 			write("SMARTBUDGET;Powerline" + powerline_index + ";Transformer" + my_transformer_index + ";House" + my_index + ";" + smart_budget);
@@ -560,7 +559,7 @@ species house parent: agentDB {
 		float current_power;
 		
 		reflex getdemand{
-			current_power <- (float (energy[2][time_step][1]));
+			current_power <- (float (energy[2][time_step-1][1]));
 			current_demand <- current_power;
 
 			house(host).demand_nonsmart <- 0.0;
@@ -652,7 +651,7 @@ species house parent: agentDB {
 	    	
 	    	}
 	    	
-	    	if(time_step = cycle_length and print_results = 1)
+	    	if(time_step = (cycle_length + 1) and print_results = 1)
 	    	{
 	    		
 	    		if (zero_power = true)
@@ -1257,7 +1256,7 @@ species generator parent: agentDB {
     action production_function_period_smart{
 		int num_rows <- length( (powerproductionperiods_list_smart) );
 		if (num_rows > 0){
-			int index <- round(floor(floor(time_step/60)/(24/production_period_smart)));
+			int index <- round(floor(floor((time_step-1)/60)/(24/production_period_smart)));
 			generator_current_production_smart <- float(powerproductionperiods_list_smart[2][index][1]);
 			do recalculate_available_power;
 		}
@@ -1282,7 +1281,7 @@ species generator parent: agentDB {
     action production_function_period_nonsmart{
 		int num_rows <- length( (powerproductionperiods_list_nonsmart) );
 		if (num_rows > 0){
-			int index <- round(floor(floor(time_step/60)/(24/production_period_nonsmart)));
+			int index <- round(floor(floor((time_step-1)/60)/(24/production_period_nonsmart)));
 			generator_current_production_nonsmart <- float(powerproductionperiods_list_nonsmart[2][index][1]);
 			do recalculate_available_power;
 		}
@@ -1565,7 +1564,6 @@ experiment test type: gui {
     
     parameter "Smart Production Function: " var: production_function_smart among:["Max","Period"] category: "Power Generation configuration" ; 
     parameter "Non-Smart Production Function: " var: production_function_nonsmart among:["Max","Period"] category: "Power Generation configuration" ;
-    
     
     parameter "Price Function: " var: price_function among:["Cosine","Constant"] category: "Price function configuration" ;
     parameter "Constant Power price: " var: price_constant  min: 1.0 max: 10.0 category: "Price function configuration" ;

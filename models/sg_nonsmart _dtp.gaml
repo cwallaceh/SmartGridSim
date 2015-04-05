@@ -12,12 +12,13 @@ model sg_nonsmart
 
 global {
 	int debug <- 0;
+	int cycle_length <- 1439;
 	int print_results <- 1;
 	
 	graph general_graph;
 	float totalenergy_smart <- 0.0;
 	float totalenergy_nonsmart <- 0.0;
-	int time_step <- 0; //748;
+	int time_step <- 0;
 	
 	int grid_width <- 200;
 	int grid_height <- 200;
@@ -31,7 +32,7 @@ global {
 	float degree_transformer <- (360 / num_transformers);
 	float degree_lines <- (360 / num_lines);
 	
-    int radius_house <- 55;
+    int radius_house <- 50;
     int radius_transformer <- 30;
     int radius_lines <- 15;
     int radius_appliance <- 4;
@@ -40,15 +41,22 @@ global {
     int max_household_profile_id;
     
     float base_price <- 1.00; //per kwh
-    float power_excess <- 0.00;
-    float generator_step_value <- 10.0;
-    float price_factor <- 1.01; //this value is used to mutiply or divide the base_price depending on production increase or decrease
+    float power_excess <- 0.00;   
+    float transformer_power_capacity <- 20.0; //KW
+    float powerline_power_capacity <- 60.0; //KW
+    float generator_max_production <- 180.0; //KW
     
-    float transformer_power_capacity <- 22.0; //KW
-    float powerline_power_capacity <- 66.0; //KW
-    float generator_max_production <- 198.0; //KW
-    float generator_base_production <- 5.0; //KW
     float generator_current_production <- 40.0; //KW
+	
+	string production_function <- "Max"; 
+    string price_function <- "Cosine";
+
+    //for cosine price function
+    float price_cosine_base <- 1.25;
+    float price_cosine_bound <- 0.25;
+
+    //for constant price function
+    float price_constant <- 1.0;
     
     // MySQL connection parameter
 	map<string, string>  MySQL <- [
@@ -112,24 +120,27 @@ global {
 	  	//write general_graph;
 	 }
 	 
-	 reflex restart_energy_and_time{
+	 reflex restart_power_and_time{
 	 	totalenergy_smart <- 0.0;
 	 	totalenergy_nonsmart <- 0.0;
 	 	
 	 	loop gn over: generator {
-	 		gn.demand  <- 0.0;
+			gn.demand_smart  <- 0.0;
+	 		gn.demand_nonsmart  <- 0.0;
 	 	}
 	 	
 	 	loop pl over: powerline {
-	 		pl.demand  <- 0.0;
+	 		pl.demand_smart  <- 0.0;
+	 		pl.demand_nonsmart  <- 0.0;
+
 	 	}
 	 	
 	 	loop tr over: transformer {
-	 		tr.demand  <- 0.0;
+	 		tr.demand_smart  <- 0.0;
+	 		tr.demand_nonsmart  <- 0.0;
 	 	}
-	 	if(time_step = 1440)
+	 	if( time_step = ( cycle_length + 1 ))
 	 	{
-	 		//time_step <- 0;
 	 		do halt;
 	 	}
 	 	else
@@ -187,7 +198,8 @@ species house parent: agentDB {
     list<smart_appliance> my_appliances <- [];
     list<list> list_appliances_db;
     file my_icon <- file("../images/House.gif");
-    float demand <- 0.0;
+    float demand_smart <- 0.0;
+    float demand_nonsmart <- 0.0;
     
     float my_x <- get_coordinate_x(radius_house, my_index, degree_house);
     float my_y <- get_coordinate_y(radius_house, my_index, degree_house);
@@ -200,7 +212,6 @@ species house parent: agentDB {
 	
 	aspect icon {
         draw my_icon size: house_size at: {my_x , my_y, 0 } ;
-        //draw string(demand) size: 3 color: rgb("black") at: {my_x , my_y, 0 };
     }
 	
 	action get_my_appliances{
@@ -217,7 +228,7 @@ species house parent: agentDB {
 				appliance_id <- int (myself.list_appliances_db[2][i-1][0]);
 				appliance_name <- string (myself.list_appliances_db[2][i-1][1]);
 				houseprofile <-  myself.houseprofile;
-				do get_energy_day;
+				do get_power_day;
 			}
  	  		add smart_appliance(appliance_created) to: my_appliances;
  	  	}
@@ -225,7 +236,7 @@ species house parent: agentDB {
  	  	create other_loads number: 1 returns: other_loads_created;
  	  	ask other_loads_created{
  	  		houseprofile <-  myself.houseprofile;
- 	  		do get_energy_day;
+ 	  		do get_power_day;
  	  	}
  	  	
 	}
@@ -233,9 +244,12 @@ species house parent: agentDB {
 	reflex get_demand{
 		if (debug = 1)
 		{
-			write("house: " + my_index + " transformer: " + my_transformer_index + " house demand: " + demand);
+			write("house: " + my_index + " transformer: " + my_transformer_index + " house demand_smart: " + demand_smart);
+			write("house: " + my_index + " transformer: " + my_transformer_index + " house demand_nonsmart: " + demand_nonsmart);
 		}
-		transformer(my_transformer_index).demand <- transformer(my_transformer_index).demand + demand;
+		
+		transformer(my_transformer_index).demand_nonsmart <- transformer(my_transformer_index).demand_nonsmart + demand_nonsmart;
+		transformer(my_transformer_index).demand_smart <- transformer(my_transformer_index).demand_nonsmart + demand_smart;
 	}
 	
 	init{
@@ -245,59 +259,10 @@ species house parent: agentDB {
 			write("house_index: " + my_index + " house_profile: " + houseprofile);	
 		}
 	}
-	
-//Smart Appliances  (subspecies of house)
-	species smart_appliance parent: agentDB {
-		int appliance_size <- 2;
-		int my_appliance_index <- smart_appliance index_of self;
-		float my_appliance_x <- house(host).my_x + (radius_appliance *(cos(my_appliance_index*degree_appliance))); 
-		float my_appliance_y <- house(host).my_y + (radius_appliance *(sin(my_appliance_index*degree_appliance)));
-		file my_icon <- file("../images/Appliance.gif") ;
-		string appliance_name;
-		int appliance_id;
-		int houseprofile;
-		list<list> energy;
-		float current_demand;
-		float current_power;
-		
-	    reflex getdemand{
-			//write ("house_index: "+my_index+" appliance_index: "+my_appliance_index+" demand: " + energy[2][time_step][0]);
-		 	current_demand <- (float (energy[2][time_step-1][1])); // it used to be energy, now it is also power
-		 	current_power <- (float (energy[2][time_step-1][1]));
-	 		
-	 		house(host).demand <- 0.0;
-	 	
-		 	house(host).demand <- house(host).demand + current_demand;
-		 	totalenergy_smart <- totalenergy_smart + current_demand;
-		 	
-		 	if(print_results = 1)
-		 	{
-			 	int transfomer_index <- house(host).my_transformer_index;
-				int powerline_index <- transformer(transfomer_index).my_powerline_index;
-			 	write("" + time_step + ";SMARTPOWER;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";SmartAppliance" + my_appliance_index + ";" +current_power);
-				write("" + time_step + ";SMARTMONEY;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";SmartAppliance" + my_appliance_index + ";" + (current_power > 0 ? base_price : 0.0));
-			}
-		}
-		
-		aspect appliance_base {
-			draw sphere(appliance_size) color: rgb('purple') at:{my_appliance_x, my_appliance_y, 0};
-		}
-		
-		aspect appliance_icon {
-        	draw my_icon size: appliance_size at:{my_appliance_x, my_appliance_y, 0};
-        	//draw string(current_demand) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
-    	}
-    	
-    	action get_energy_day{
-    		ask agentDB{
-				myself.energy <- list<list> (self select(select:"SELECT energy, power FROM appliances_profiles WHERE id_appliance = "+myself.appliance_id+" AND id_household_profile = "+myself.houseprofile+" ORDER BY time;"));	
-			}
-    	}
-	}
 
 //Other loads (subspecies of house)
 	species other_loads parent: agentDB {
-		int appliance_size <- 2;
+		int appliance_size <- 1;
 		int houseprofile;
 		int my_appliance_index <- house(host).num_appliances;
 		float my_appliance_x <- house(host).my_x + (radius_appliance *(cos(my_appliance_index*degree_appliance))); 
@@ -308,14 +273,14 @@ species house parent: agentDB {
 		float current_power;
 		
 		reflex getdemand{
-			current_demand <- (float (energy[2][time_step-1][1])); // it used to be energy, now it is also power
 			current_power <- (float (energy[2][time_step-1][1]));
-			 	
-		 	house(host).demand <- house(host).demand + current_demand;
+			current_demand <- current_power;
+			
+		 	house(host).demand_nonsmart <- 0.0;
+		 	house(host).demand_nonsmart <- house(host).demand_nonsmart + current_demand;
 		 	totalenergy_nonsmart <- totalenergy_nonsmart + current_demand;
 		 	
-		 	if(print_results = 1)
-		 	{
+		 	if(print_results = 1){
 			 	int transfomer_index <- house(host).my_transformer_index;
 				int powerline_index <- transformer(transfomer_index).my_powerline_index;
 			 	write("" + time_step + ";NONSMARTPOWER;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";NonSmartAppliance" + my_appliance_index + ";" +current_power);
@@ -324,16 +289,60 @@ species house parent: agentDB {
 		}
 			
 		aspect appliance_icon {
-        	draw my_icon size: appliance_size color:rgb("blue")  at:{my_appliance_x, my_appliance_y, 0};
-        	//draw string(current_demand) size: 3 color: rgb("black") at:{my_appliance_x, my_appliance_y, 0};
+        	draw sphere(appliance_size) color: rgb("blue") at:{my_appliance_x, my_appliance_y, 0};
     	}
     	
-    	action get_energy_day{
+    	action get_power_day{
     		ask agentDB{
 				myself.energy <- list<list> (self select(select:"SELECT SUM(energy) energy, SUM(power) power, time FROM appliances_profiles WHERE id_household_profile = "+myself.houseprofile+" AND id_appliance NOT IN (SELECT id_appliance FROM appliances WHERE isSmart = 1) GROUP BY time ORDER BY time;"));	
 			}
     	}	
 	}	
+
+//Smart Appliances  (subspecies of house)
+	species smart_appliance parent: agentDB {
+		int appliance_size <- 1;
+		int my_appliance_index <- smart_appliance index_of self;
+		float my_appliance_x <- house(host).my_x + (radius_appliance *(cos(my_appliance_index*degree_appliance))); 
+		float my_appliance_y <- house(host).my_y + (radius_appliance *(sin(my_appliance_index*degree_appliance)));
+		file my_icon <- file("../images/Appliance.gif") ;
+		string appliance_name;
+		int appliance_id;
+		int houseprofile;
+		list<list> energyandpower;
+		float current_demand;
+		
+	    reflex getdemand{
+			int transfomer_index <- house(host).my_transformer_index;
+			int powerline_index <- transformer(transfomer_index).my_powerline_index;
+			 	
+		 	current_demand <- (float (energyandpower[2][time_step-1][1]));
+	 		
+	 		house(host).demand_smart <- 0.0;
+			house(host).demand_smart <- house(host).demand_smart + current_demand;
+		 	totalenergy_smart <- totalenergy_smart + current_demand;
+		 	
+		 	if(print_results = 1)
+		 	{
+			 	write("" + time_step + ";SMARTPOWER;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";SmartAppliance" + my_appliance_index + ";" +current_demand);
+				write("" + time_step + ";SMARTMONEY;Powerline" + powerline_index + ";Transformer" + transfomer_index + ";House" + my_index + ";SmartAppliance" + my_appliance_index + ";" + (current_demand > 0 ? base_price : 0.0));	
+			}
+		}
+		
+		aspect appliance_base {
+			draw sphere(appliance_size) color: rgb('red') at:{my_appliance_x, my_appliance_y, 0};
+		}
+		
+		aspect appliance_icon {
+		    draw sphere(appliance_size) color: rgb('red') at:{my_appliance_x, my_appliance_y, 0};
+		}
+		
+    	action get_power_day{
+    		ask agentDB{
+				myself.energyandpower <- list<list> (self select(select:"SELECT energy, power FROM appliances_profiles WHERE id_appliance = "+myself.appliance_id+" AND id_household_profile = "+myself.houseprofile+" ORDER BY time;"));	
+			}
+    	}
+	}
 }
 
 //Transformers
@@ -343,7 +352,8 @@ species transformer parent: agentDB {
     int my_powerline_index;
     list<house> my_houses <- [];
     file my_icon <- file("../images/Transformer.gif") ;
-    float demand;
+    float demand_smart;
+    float demand_nonsmart;
     
     float my_x <- get_coordinate_x(radius_transformer, my_index, degree_transformer);
     float my_y <- get_coordinate_y(radius_transformer, my_index, degree_transformer);
@@ -370,13 +380,14 @@ species transformer parent: agentDB {
     reflex get_demand{
     	if (debug = 1)
 		{
-			write("transformer: " + my_index + " powerline: " + my_powerline_index + " demand: " + demand);
+			write("transformer: " + my_index + " powerline: " + my_powerline_index + " demand_nonsmart: " + demand_nonsmart);
+			write("transformer: " + my_index + " powerline: " + my_powerline_index + " demand_smart: " + demand_smart);
 		}
-    	powerline(my_powerline_index).demand <- powerline(my_powerline_index).demand + demand;
+		powerline(my_powerline_index).demand_nonsmart <- powerline(my_powerline_index).demand_nonsmart + demand_nonsmart;
+    	powerline(my_powerline_index).demand_smart <- powerline(my_powerline_index).demand_smart + demand_smart;
     	
-    	if(print_results = 1)
-		{
-    		write("" + time_step + ";Transformer" + my_index + ";exceed_flag;" + (demand - transformer_power_capacity ) );
+    	if (print_results = 1){
+    		write("" + time_step + ";Transformer" + my_index + ";exceed_flag;" + ( (demand_smart + demand_nonsmart) - transformer_power_capacity ) );
     	}    	
     }
 }
@@ -388,7 +399,8 @@ species powerline parent: agentDB {
     int my_generator_index;
 	list<transformer> my_transformers <- [];
     file my_icon <- file("../images/PowerLines.gif") ;
-    float demand;
+    float demand_smart;
+    float demand_nonsmart;
     
     float my_x <- get_coordinate_x(radius_lines, my_index, degree_lines);
     float my_y <- get_coordinate_y(radius_lines, my_index, degree_lines);
@@ -415,13 +427,15 @@ species powerline parent: agentDB {
     reflex get_demand{
     	if (debug = 1)
 		{
-			write("powerline: " + my_index + " generator: " + my_generator_index + " demand: " + demand);
+			write("powerline: " + my_index + " generator: " + my_generator_index + " demand_smart: " + demand_smart);
+			write("powerline: " + my_index + " generator: " + my_generator_index + " demand_nonsmart: " + demand_nonsmart);
 		}
     	
-    	generator(my_generator_index).demand <- generator(my_generator_index).demand + demand;
-    	if(print_results = 1)
-		{
-    		write("" + time_step + ";Powerline" + my_index + ";exceed_flag;" + ( demand - powerline_power_capacity) );
+		generator(my_generator_index).demand_smart <- generator(my_generator_index).demand_smart + demand_smart;
+    	generator(my_generator_index).demand_nonsmart <- generator(my_generator_index).demand_nonsmart + demand_nonsmart;
+    	
+    	if (print_results = 1){
+    		write("" + time_step + ";Powerline" + my_index + ";exceed_flag;" + ( (demand_smart + demand_nonsmart) - powerline_power_capacity) );
     	}
     }
 }
@@ -430,11 +444,22 @@ species powerline parent: agentDB {
 species generator parent: agentDB {
 	int generator_size <- 10;
 	int my_index <- generator index_of self;
-	list<powerline> my_lines update:(list (species(powerline)));
+	list<powerline> my_lines <- []; 
 	float my_x <- (grid_width/4);
     float my_y <- (grid_height/4);
     file my_icon <- file("../images/PowerPlant.gif") ;
-    float demand;
+    float demand_smart;
+    float demand_nonsmart;
+    
+	//production fuction - period production
+	list<list> powerproductionperiods_list;
+	list<float> powerproductionperiods;
+	int production_period <- 3;
+	
+	//production function - max production
+	list<list> powerproductionmax_list;
+	float maxpowerproduction;
+	
        
 	aspect base {
 		draw sphere(generator_size) color: rgb('red') at: {my_x , my_y , 0 } ;			
@@ -444,43 +469,34 @@ species generator parent: agentDB {
         draw my_icon size: generator_size at: {my_x , my_y, 0 } ;
     }
     
-    //step production function
-    action production_function_step{
-    	bool increase_step <- false;
-    	bool decrease_step <- false;
-
-    	if (demand > generator_current_production)
-	    {
-	    	if (generator_current_production + generator_step_value <= generator_max_production)
-	    	{
-	    		generator_current_production <- generator_current_production + generator_step_value;
-		     	increase_step <- true;
-	    	}
-	    }
-	    else{
-	    	if (demand < (generator_current_production - generator_step_value))
-		    {
-		    	generator_current_production <- generator_current_production - generator_step_value;
-		    	decrease_step <- true;
-		    }	
-	    }
-	    
-	    if (increase_step = true)
-	    {
-	    	base_price <- base_price * price_factor;
-	    }
-	    
-	    if (decrease_step = true)
-	    {
-	    	base_price <- base_price / price_factor;
-	    }
-	    
+    action production_function_period{
+		int num_rows <- length( (powerproductionperiods_list) );
+		if (num_rows > 0){
+			int index <- round(floor(floor((time_step-1)/60)/(24/production_period)));
+			generator_current_production <- float(powerproductionperiods_list[2][index][1]);
+		}
+    }
+    
+    action production_function_max{
+		int num_rows <- length( (powerproductionmax_list) );
+		if (num_rows > 0){
+			generator_current_production <- float(powerproductionmax_list[2][0][0]);
+		}
+    }
+    
+    action price_cosine{    	
+    	base_price <- ( (price_cosine_bound * -1) * cos( (360 * time_step) /cycle_length ) ) + price_cosine_base; 
+    }
+    
+    action price_constant{
+    	base_price <- price_constant;
     }
     
     reflex get_demand{
     	if (debug = 1)
 		{
-			write("generator: " + my_index + " demand: " + demand);
+			write("generator: " + my_index + " demand_smart: " + demand_smart);
+			write("generator: " + my_index + " demand_nonsmart: " + demand_nonsmart);
 		}
 		
 		if(print_results = 1)
@@ -491,11 +507,34 @@ species generator parent: agentDB {
 		
     }
     
-    reflex base_price{
-     	power_excess <- generator_current_production - demand;
-		do production_function_step;
+    reflex production_and_price{
+     	power_excess <- generator_current_production - (demand_smart + demand_nonsmart);
+		
+		if (production_function = "Max"){
+			do production_function_max;	
+		}
+		else if (production_function = "Period"){
+			do production_function_period;
+		}
+		
+		if (price_function = "Cosine"){
+			do price_cosine;
+		}
+		else if (price_function = "Constant"){
+			do price_constant;
+		}
     }
     
+    init {
+		loop pl over: (species(powerline)) {
+			add pl to: my_lines; 
+    	}
+		
+		ask agentDB{
+			myself.powerproductionperiods_list <- list<list> (self select(select:"select hour(a.time) div (24/"+myself.production_period+") period, max(power) power from ( select time, sum(power) power from appliances_profiles group by time ) a group by hour(a.time) div (24/"+myself.production_period+");"));
+			myself.powerproductionmax_list <- list<list> (self select(select:"select max(power) power from ( select time, sum(power) power from appliances_profiles group by time ) a ;"));
+		}
+	}
 }
 
 //Graph
@@ -512,8 +551,16 @@ grid land width: grid_width height: grid_height neighbours: 4 {
 
 //Experiment
 experiment test type: gui {
-    //parameter "Number of houses: " var: num_houses min: 4 max: 100 category: "House" ;
     parameter "Debug?: " var: debug min: 0 max: 1 category: "General configuration" ;
+    parameter "Print results: " var: print_results min: 0 max: 1 category: "General configuration" ;
+    
+    parameter "Production Function: " var: production_function among:["Max","Period"] category: "Power Generation configuration" ; 
+    
+    parameter "Price Function: " var: price_function among:["Cosine","Constant"] category: "Price function configuration" ;
+    parameter "Constant Power price: " var: price_constant  min: 1.0 max: 10.0 category: "Price function configuration" ;
+    parameter "Cosine Power price base: " var: price_cosine_base  min: 0.0 max: 10.0 category: "Price function configuration" ;
+    parameter "Cosine Power price bound: " var: price_cosine_bound  min: 0.0 max: 10.0 category: "Price function configuration" ;
+  
     
     output {
             display main_display type: opengl {
@@ -527,11 +574,13 @@ experiment test type: gui {
                     species generator aspect: icon;
                     species edge_agent aspect: base;
             }
-            display chart_display {
+			
+			display smartVsnonsmart_display {
   					chart "Total demand" type: series {
   						data "smart demand" value: totalenergy_smart color: rgb('red') ;
   						data "non-smart demand" value: totalenergy_nonsmart color: rgb('blue') ;
   						data "total demand" value: (totalenergy_smart + totalenergy_nonsmart) color: rgb('purple') ;
+  						data "total production" value: generator_current_production color: rgb('black');
 					}
 			}
 			/*
