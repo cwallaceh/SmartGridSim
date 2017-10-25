@@ -7,7 +7,7 @@
  *	https://creativecommons.org/licenses/by/3.0/
  */
 
-model sg_scheduling
+model sg_scheduling_dtp
 
 /* Insert your model definition here */
 

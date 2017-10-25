@@ -6,7 +6,7 @@
  * 	Icons made by Freepik from www.flaticon.com is licensed under CC BY 3.0
  */
 
-model sg_nonsmart
+model sg_nonsmart_dtp
 
 /* Insert your model definition here */
 

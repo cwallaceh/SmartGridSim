@@ -1,0 +1,9 @@
+#
+#Thu Sep 01 23:45:03 PDT 2016
+operators=envelope~-~/~as~link~\:\:~point~.~edge~first~+~*~cos~sin~\=~internal_at~index_of~length~?~>~\:~sphere~ceil~<\=~sqrt~^~round~floor
+plugins=msi.gama.core~irit.gaml.extensions.database~ummisco.gama.opengl
+statements=action~set~loop~create~arg~add~ask~do~return~if~else~write~let~init~reflex~aspect~draw~output~display~display_grid~display_population~chart~data
+skills=reflex~grid
+species=AgentDB
+types=geometry~string~list~int~unknown~point~agent~rgb~float~bool~date~graph~map~container~file
+actions=debug~error~tell~write~die~_init_~_step_~halt~pause~select~isConnected~testConnection~executeUpdate~insert~timeStamp~close~connect~getParameter~setParameter
